@@ -4,6 +4,7 @@
 const CONFIG = {
     SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzs_hVlsEQAu_4qeOaZUTjS_cnH3NR22ecQ8QUu5Zw_z8WpOzjnoMLo8Tm-hgQnohQ_zw/exec',
     GOOGLE_SHEET_URL: 'https://docs.google.com/spreadsheets/d/1tumwvxOoToPYDPdpXLyGYaiT2kbfN6Vw_HBd-8t6IAA/edit?gid=353413478#gid=353413478',
+    CSV_FILE: 'cascading_data.csv',
     LOGIN_USERNAME: 'bbc',
     LOGIN_PASSWORD: 'bbc',
     SHEETS: {
@@ -13,22 +14,68 @@ const CONFIG = {
 };
 
 // ============================================
-// REGION-DISTRICT MAPPING
+// LOCATION DATA (loaded from CSV)
 // ============================================
-const REGION_DISTRICT_MAP = {
-    'Western Area': ['Western Area Urban District', 'Western Area Rural District'],
-    'Northern Region': ['Bombali District', 'Falaba District', 'Koinadugu District', 'Tonkolili District'],
-    'Southern Region': ['Bo District', 'Bonthe District', 'Moyamba District', 'Pujehun District'],
-    'Eastern Region': ['Kailahun District', 'Kenema District', 'Kono District'],
-    'North-Western Region': ['Kambia District', 'Karene District', 'Port Loko District']
-};
+let LOCATION_DATA = {};
+// Structure: { district: { chiefdom: { section: [facility, ...] } } }
+
+function loadLocationData() {
+    return new Promise((resolve, reject) => {
+        Papa.parse(CONFIG.CSV_FILE, {
+            download: true,
+            header: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                const data = results.data;
+                LOCATION_DATA = {};
+
+                data.forEach(row => {
+                    const district = (row.adm1 || '').trim();
+                    const chiefdom = (row.adm2 || '').trim();
+                    const section = (row.adm3 || '').trim();
+                    const facility = (row.hf || '').trim();
+
+                    if (!district) return;
+
+                    if (!LOCATION_DATA[district]) LOCATION_DATA[district] = {};
+                    if (!LOCATION_DATA[district][chiefdom]) LOCATION_DATA[district][chiefdom] = {};
+                    if (!LOCATION_DATA[district][chiefdom][section]) LOCATION_DATA[district][chiefdom][section] = [];
+                    if (facility && !LOCATION_DATA[district][chiefdom][section].includes(facility)) {
+                        LOCATION_DATA[district][chiefdom][section].push(facility);
+                    }
+                });
+
+                // Sort all arrays
+                for (const d in LOCATION_DATA) {
+                    for (const c in LOCATION_DATA[d]) {
+                        for (const s in LOCATION_DATA[d][c]) {
+                            LOCATION_DATA[d][c][s].sort();
+                        }
+                    }
+                }
+
+                console.log(`Loaded ${Object.keys(LOCATION_DATA).length} districts from CSV`);
+                resolve();
+            },
+            error: function(error) {
+                console.error('CSV load error:', error);
+                reject(error);
+            }
+        });
+    });
+}
+
+// Helper: get sorted keys
+function sortedKeys(obj) {
+    return Object.keys(obj).sort();
+}
 
 // ============================================
 // FORM SECTIONS DEFINITION
 // ============================================
 const FORM_SECTIONS = {
-    'Section A: School Profile': {
-        description: 'Basic information about the school receiving ITNs',
+    'Section A: School & Location Profile': {
+        description: 'School identification and geographic location',
         fields: {
             school_name: { label: 'Name of School', type: 'text' },
             school_type: {
@@ -41,19 +88,30 @@ const FORM_SECTIONS = {
                 type: 'radio',
                 options: ['Government', 'Mission/Faith-based', 'Private', 'Community']
             },
-            region: {
-                label: 'Region',
-                type: 'select',
-                options: Object.keys(REGION_DISTRICT_MAP)
-            },
             district: {
                 label: 'District',
-                type: 'select',
-                options: [],
-                cascadeFrom: 'region'
+                type: 'cascade_select',
+                cascadeLevel: 'district'
             },
-            chiefdom: { label: 'Chiefdom', type: 'text' },
-            community_name: { label: 'Community/Town/Village Name', type: 'text' },
+            chiefdom: {
+                label: 'Chiefdom',
+                type: 'cascade_select',
+                cascadeLevel: 'chiefdom',
+                cascadeFrom: 'district'
+            },
+            section: {
+                label: 'Section',
+                type: 'cascade_select',
+                cascadeLevel: 'section',
+                cascadeFrom: 'chiefdom'
+            },
+            facility: {
+                label: 'Nearest Health Facility',
+                type: 'cascade_select',
+                cascadeLevel: 'facility',
+                cascadeFrom: 'section'
+            },
+            community_name: { label: 'Community / Town / Village Name', type: 'text' },
             head_teacher_name: { label: 'Name of Head Teacher', type: 'text' },
             head_teacher_contact: { label: 'Head Teacher Contact Number', type: 'tel' }
         }
@@ -74,7 +132,7 @@ const FORM_SECTIONS = {
         }
     },
     'Section C: ITN Supply & Distribution': {
-        description: 'Details of ITN stock received and distributed',
+        description: 'Details of ITN stock received and distributed at the school',
         fields: {
             distribution_date: { label: 'Q11. Date of ITN Distribution', type: 'date' },
             itns_received: { label: 'Q12. Total number of ITNs received for this school', type: 'number' },
@@ -83,30 +141,30 @@ const FORM_SECTIONS = {
                 type: 'radio',
                 options: ['National Malaria Control Programme (NMCP)', 'District Health Management Team (DHMT)', 'WHO', 'Global Fund', 'UNICEF', 'NGO/Partner Organization', 'Other']
             },
-            source_of_itns_other: { label: 'If Other, Please Specify', type: 'text', required: false },
+            source_of_itns_other: { label: 'If Other, please specify', type: 'text', required: false },
             itns_distributed_total: { label: 'Q14. Total number of ITNs distributed to students', type: 'number' },
             itns_distributed_male: { label: 'Q15. Number of ITNs distributed to male students', type: 'number' },
             itns_distributed_female: { label: 'Q16. Number of ITNs distributed to female students', type: 'number' },
             itns_distributed_teachers: { label: 'Q17. Number of ITNs distributed to teachers (if applicable)', type: 'number', required: false },
             itns_remaining: { label: 'Q18. Number of ITNs remaining after distribution', type: 'number' },
-            itns_damaged: { label: 'Q19. Number of damaged/unusable ITNs found', type: 'number' },
+            itns_damaged: { label: 'Q19. Number of damaged / unusable ITNs found', type: 'number' },
             itn_brand: {
-                label: 'Q20. Brand/Type of ITN distributed',
+                label: 'Q20. Brand / Type of ITN distributed',
                 type: 'radio',
                 options: ['PermaNet', 'Olyset', 'DawaPlus', 'Interceptor', 'Royal Sentry', 'Other', "Don't know"]
             },
-            itn_brand_other: { label: 'If Other, Please Specify', type: 'text', required: false }
+            itn_brand_other: { label: 'If Other, please specify', type: 'text', required: false }
         }
     },
     'Section D: Distribution Process & Logistics': {
-        description: 'How the distribution was organized and conducted',
+        description: 'How the distribution was organized and conducted at the school',
         fields: {
             distribution_method: {
                 label: 'Q21. How were ITNs distributed to students?',
                 type: 'radio',
                 options: ['Classroom-by-classroom distribution', 'Central point (e.g., assembly hall)', 'Class teachers distributed to their students', 'Students lined up by grade', 'Other']
             },
-            distribution_method_other: { label: 'If Other, Please Specify', type: 'text', required: false },
+            distribution_method_other: { label: 'If Other, please specify', type: 'text', required: false },
             distribution_supervised_by: {
                 label: 'Q22. Who supervised the distribution? (Select all that apply)',
                 type: 'checkbox',
@@ -116,22 +174,22 @@ const FORM_SECTIONS = {
                     'District Health Management Team (DHMT) Staff',
                     'NMCP Staff',
                     'Community Health Workers (CHWs)',
-                    'NGO/Partner Staff',
+                    'NGO / Partner Staff',
                     'School Management Committee (SMC)',
                     'Other'
                 ]
             },
-            distribution_supervised_other: { label: 'If Other, Please Specify', type: 'text', required: false },
+            distribution_supervised_other: { label: 'If Other, please specify', type: 'text', required: false },
             health_education_given: {
-                label: 'Q23. Was health education on ITN use provided to students during distribution?',
+                label: 'Q23. Was health education on ITN use provided during distribution?',
                 type: 'radio',
                 options: ['Yes', 'No']
             },
             health_education_topics: {
-                label: 'Q24. What topics were covered in health education? (Select all that apply)',
+                label: 'Q24. What topics were covered? (Select all that apply)',
                 type: 'checkbox',
                 options: [
-                    'How to hang/install the ITN',
+                    'How to hang / install the ITN',
                     'Importance of sleeping under ITN every night',
                     'How to care for and wash the ITN',
                     'Malaria prevention and symptoms',
@@ -145,13 +203,13 @@ const FORM_SECTIONS = {
             who_delivered_health_education: {
                 label: 'Q25. Who delivered the health education?',
                 type: 'radio',
-                options: ['Teacher', 'Health Worker', 'NMCP Staff', 'NGO/Partner Staff', 'Community Health Worker', 'Other'],
+                options: ['Teacher', 'Health Worker', 'NMCP Staff', 'NGO / Partner Staff', 'Community Health Worker', 'Other'],
                 required: false,
                 conditional: 'health_education_given',
                 conditionalValue: 'Yes'
             },
             register_used: {
-                label: 'Q26. Was a distribution register/list used to track ITNs given to each student?',
+                label: 'Q26. Was a distribution register / list used to track ITNs given?',
                 type: 'radio',
                 options: ['Yes', 'No']
             },
@@ -177,7 +235,7 @@ const FORM_SECTIONS = {
                     'Prioritized younger students',
                     'Prioritized female students',
                     'First-come-first-served basis',
-                    'Students without any nets at home were prioritized',
+                    'Students without any nets at home prioritized',
                     'Requested additional ITNs from DHMT',
                     'Not yet resolved',
                     'Other'
@@ -186,7 +244,7 @@ const FORM_SECTIONS = {
                 conditional: 'sufficient_itns',
                 conditionalValue: 'No'
             },
-            shortage_action_other: { label: 'If Other, Please Specify', type: 'text', required: false },
+            shortage_action_other: { label: 'If Other, please specify', type: 'text', required: false },
             challenges_encountered: {
                 label: 'Q30. Were any challenges encountered during the distribution?',
                 type: 'radio',
@@ -201,7 +259,7 @@ const FORM_SECTIONS = {
                     'Low student attendance on distribution day',
                     'Damaged or torn ITNs in the supply',
                     'Lack of transportation for ITNs',
-                    'No distribution register/forms available',
+                    'No distribution register / forms available',
                     'Inadequate storage space at the school',
                     'Community members demanding ITNs meant for students',
                     'Lack of supervision from health authorities',
@@ -212,17 +270,17 @@ const FORM_SECTIONS = {
                 conditional: 'challenges_encountered',
                 conditionalValue: 'Yes'
             },
-            challenge_types_other: { label: 'If Other, Please Specify', type: 'text', required: false },
+            challenge_types_other: { label: 'If Other, please specify', type: 'text', required: false },
             itn_storage_before_distribution: {
                 label: 'Q32. Where were ITNs stored before distribution?',
                 type: 'radio',
-                options: ['School store room', 'Head Teacher\'s office', 'Classroom', 'Community health center', 'District warehouse', 'Other']
+                options: ["Head Teacher's office", 'School store room', 'Classroom', 'Community health center', 'District warehouse', 'Other']
             },
-            itn_storage_other: { label: 'If Other, Please Specify', type: 'text', required: false },
+            itn_storage_other: { label: 'If Other, please specify', type: 'text', required: false },
             condition_of_itns: {
                 label: 'Q33. Overall condition of ITNs received',
                 type: 'radio',
-                options: ['All in good condition', 'Most in good condition (few damaged)', 'Many damaged/torn', 'Expired or discolored']
+                options: ['All in good condition', 'Most in good condition (few damaged)', 'Many damaged / torn', 'Expired or discolored']
             },
             previous_school_itn_distribution: {
                 label: 'Q34. Has this school received ITN distribution before?',
@@ -232,7 +290,7 @@ const FORM_SECTIONS = {
             last_distribution_year: {
                 label: 'Q35. If Yes, when was the last school-based ITN distribution?',
                 type: 'radio',
-                options: ['Within the last year', '1-2 years ago', '3-4 years ago', '5+ years ago', "Don't know"],
+                options: ['Within the last year', '1–2 years ago', '3–4 years ago', '5+ years ago', "Don't know"],
                 required: false,
                 conditional: 'previous_school_itn_distribution',
                 conditionalValue: 'Yes'
@@ -249,13 +307,13 @@ const FORM_SECTIONS = {
         description: 'Information about the person completing this survey',
         fields: {
             respondent_name: { label: 'Name of Respondent', type: 'text' },
-            respondent_position: { label: 'Position/Title', type: 'text' },
+            respondent_position: { label: 'Position / Title', type: 'text' },
             respondent_organization: {
                 label: 'Organization',
                 type: 'radio',
-                options: ['NMCP', 'DHMT', 'WHO', 'NGO/Partner', 'School Staff', 'Other']
+                options: ['NMCP', 'DHMT', 'WHO', 'NGO / Partner', 'School Staff', 'Other']
             },
-            respondent_organization_other: { label: 'If Other, Please Specify', type: 'text', required: false },
+            respondent_organization_other: { label: 'If Other, please specify', type: 'text', required: false },
             respondent_contact: { label: 'Contact Number', type: 'tel' },
             respondent_email: { label: 'Email Address', type: 'email', required: false },
             survey_date: { label: 'Date of Survey', type: 'date' },
@@ -279,27 +337,35 @@ const state = {
     formStatus: 'draft',
     currentDraftId: null,
     currentDraftName: null,
-    gpsAttempted: false
+    gpsAttempted: false,
+    locationDataLoaded: false
 };
 
 // ============================================
 // INITIALIZATION
 // ============================================
-function init() {
+async function init() {
     const savedPending = localStorage.getItem('pendingSubmissions_itn');
-    if (savedPending) {
-        try { state.pendingSubmissions = JSON.parse(savedPending); } catch (e) { state.pendingSubmissions = []; }
-    }
+    if (savedPending) { try { state.pendingSubmissions = JSON.parse(savedPending); } catch (e) { state.pendingSubmissions = []; } }
 
     const savedDrafts = localStorage.getItem('formDrafts_itn');
-    if (savedDrafts) {
-        try { state.drafts = JSON.parse(savedDrafts); } catch (e) { state.drafts = []; }
-    }
+    if (savedDrafts) { try { state.drafts = JSON.parse(savedDrafts); } catch (e) { state.drafts = []; } }
 
     updateOnlineStatus();
     updatePendingCount();
     updateDraftCount();
     setupEventListeners();
+
+    // Load CSV data first, then generate form
+    try {
+        await loadLocationData();
+        state.locationDataLoaded = true;
+        console.log('Location data loaded successfully');
+    } catch (e) {
+        console.error('Failed to load location data:', e);
+        showNotification('Warning: Location data could not be loaded. Cascading dropdowns may not work.', 'warning');
+    }
+
     generateFormSections();
 
     setTimeout(() => { captureGPSAutomatically(); }, 1000);
@@ -337,7 +403,6 @@ function generateFormSections() {
             const conditional = fieldConfig.conditional;
             const conditionalValue = fieldConfig.conditionalValue;
             const conditionalInverse = fieldConfig.conditionalInverse || false;
-            const cascadeFrom = fieldConfig.cascadeFrom;
 
             const conditionalClass = conditional ? 'conditional-field' : '';
             const conditionalData = conditional ? `data-conditional="${conditional}" data-conditional-value="${conditionalValue}" data-conditional-inverse="${conditionalInverse}"` : '';
@@ -345,7 +410,33 @@ function generateFormSections() {
             html += `<div class="form-group ${conditionalClass}" ${conditionalData} id="group_${fieldName}">`;
             html += `<label class="form-label">${label.toUpperCase()} ${required ? '<span class="required">*</span>' : ''}</label>`;
 
-            if (type === 'signature') {
+            if (type === 'cascade_select') {
+                // Cascading dropdown from CSV
+                const level = fieldConfig.cascadeLevel;
+                const cascadeFrom = fieldConfig.cascadeFrom || '';
+                const isDisabled = cascadeFrom ? 'disabled' : '';
+                const placeholder = level === 'district' ? 'Select District...' :
+                                   level === 'chiefdom' ? 'Select Chiefdom...' :
+                                   level === 'section' ? 'Select Section...' :
+                                   'Select Health Facility...';
+
+                html += `<div class="cascade-select-wrapper">`;
+                html += `<select class="form-select" name="${fieldName}" id="${fieldName}" ${required ? 'required' : ''} ${isDisabled} data-cascade-level="${level}" data-cascade-from="${cascadeFrom}" data-field-name="${fieldName}">`;
+                html += `<option value="">${placeholder}</option>`;
+
+                // Pre-populate district level
+                if (level === 'district' && state.locationDataLoaded) {
+                    sortedKeys(LOCATION_DATA).forEach(d => {
+                        html += `<option value="${d}">${d}</option>`;
+                    });
+                }
+
+                html += `</select>`;
+                html += `<div class="cascade-count" id="count_${fieldName}"></div>`;
+                html += `</div>`;
+                html += `<div class="field-error" id="error_${fieldName}">Please select an option</div>`;
+
+            } else if (type === 'signature') {
                 html += `
                     <div class="signature-container">
                         <canvas class="signature-canvas" id="${fieldName}_canvas" data-field="${fieldName}"></canvas>
@@ -394,22 +485,11 @@ function generateFormSections() {
                     `;
                 });
                 html += '</div>';
-            } else if (type === 'select' && fieldConfig.options) {
-                const isDisabled = cascadeFrom ? 'disabled' : '';
-                html += `<select class="form-select" name="${fieldName}" id="${fieldName}" ${required ? 'required' : ''} ${isDisabled} data-cascade-from="${cascadeFrom || ''}" data-field-name="${fieldName}">`;
-                html += '<option value="">Select...</option>';
-                fieldConfig.options.forEach(option => {
-                    html += `<option value="${option}">${option}</option>`;
-                });
-                html += '</select>';
-                html += `<div class="field-error" id="error_${fieldName}">Please select an option</div>`;
             } else if (type === 'date') {
                 html += `<input type="date" class="form-input" name="${fieldName}" id="${fieldName}" ${required ? 'required' : ''} data-field-name="${fieldName}">`;
                 html += `<div class="field-error" id="error_${fieldName}">This field is required</div>`;
             } else if (type === 'number') {
-                const minAttr = fieldConfig.min !== undefined ? `min="${fieldConfig.min}"` : 'min="0"';
-                const maxAttr = fieldConfig.max !== undefined ? `max="${fieldConfig.max}"` : '';
-                html += `<input type="number" class="form-input" name="${fieldName}" id="${fieldName}" ${minAttr} ${maxAttr} step="1" ${required ? 'required' : ''} data-field-name="${fieldName}">`;
+                html += `<input type="number" class="form-input" name="${fieldName}" id="${fieldName}" min="0" step="1" ${required ? 'required' : ''} data-field-name="${fieldName}">`;
                 html += `<div class="field-error" id="error_${fieldName}">This field is required</div>`;
             } else if (type === 'textarea') {
                 html += `<textarea class="form-textarea" name="${fieldName}" id="${fieldName}" rows="4" ${required ? 'required' : ''} data-field-name="${fieldName}"></textarea>`;
@@ -449,12 +529,141 @@ function generateFormSections() {
 
     setTimeout(() => {
         initializeSignaturePads();
-        setupConditionalFields();
         setupCascadingDropdowns();
+        setupConditionalFields();
         setupRealTimeValidation();
     }, 100);
 }
 
+// ============================================
+// 4-LEVEL CASCADING DROPDOWNS (from CSV)
+// ============================================
+function setupCascadingDropdowns() {
+    const districtSelect = document.getElementById('district');
+    const chiefdomSelect = document.getElementById('chiefdom');
+    const sectionSelect = document.getElementById('section');
+    const facilitySelect = document.getElementById('facility');
+
+    if (!districtSelect || !chiefdomSelect || !sectionSelect || !facilitySelect) return;
+
+    // Show count for district
+    updateCascadeCount('district', Object.keys(LOCATION_DATA).length);
+
+    // District → Chiefdom
+    districtSelect.addEventListener('change', function() {
+        const d = this.value;
+        resetCascade(chiefdomSelect, 'Select Chiefdom...');
+        resetCascade(sectionSelect, 'Select Section...');
+        resetCascade(facilitySelect, 'Select Health Facility...');
+        clearCascadeCount('chiefdom');
+        clearCascadeCount('section');
+        clearCascadeCount('facility');
+
+        if (d && LOCATION_DATA[d]) {
+            chiefdomSelect.disabled = false;
+            const chiefdoms = sortedKeys(LOCATION_DATA[d]);
+            chiefdoms.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = c;
+                chiefdomSelect.appendChild(opt);
+            });
+            updateCascadeCount('chiefdom', chiefdoms.length);
+        } else {
+            chiefdomSelect.disabled = true;
+            sectionSelect.disabled = true;
+            facilitySelect.disabled = true;
+        }
+        clearFieldError('district');
+        clearFieldError('chiefdom');
+        clearFieldError('section');
+        clearFieldError('facility');
+    });
+
+    // Chiefdom → Section
+    chiefdomSelect.addEventListener('change', function() {
+        const d = districtSelect.value;
+        const c = this.value;
+        resetCascade(sectionSelect, 'Select Section...');
+        resetCascade(facilitySelect, 'Select Health Facility...');
+        clearCascadeCount('section');
+        clearCascadeCount('facility');
+
+        if (d && c && LOCATION_DATA[d] && LOCATION_DATA[d][c]) {
+            sectionSelect.disabled = false;
+            const sections = sortedKeys(LOCATION_DATA[d][c]);
+            sections.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s;
+                sectionSelect.appendChild(opt);
+            });
+            updateCascadeCount('section', sections.length);
+        } else {
+            sectionSelect.disabled = true;
+            facilitySelect.disabled = true;
+        }
+        clearFieldError('chiefdom');
+        clearFieldError('section');
+        clearFieldError('facility');
+    });
+
+    // Section → Facility
+    sectionSelect.addEventListener('change', function() {
+        const d = districtSelect.value;
+        const c = chiefdomSelect.value;
+        const s = this.value;
+        resetCascade(facilitySelect, 'Select Health Facility...');
+        clearCascadeCount('facility');
+
+        if (d && c && s && LOCATION_DATA[d] && LOCATION_DATA[d][c] && LOCATION_DATA[d][c][s]) {
+            facilitySelect.disabled = false;
+            const facilities = LOCATION_DATA[d][c][s]; // Already sorted
+            facilities.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                facilitySelect.appendChild(opt);
+            });
+            updateCascadeCount('facility', facilities.length);
+        } else {
+            facilitySelect.disabled = true;
+        }
+        clearFieldError('section');
+        clearFieldError('facility');
+    });
+
+    facilitySelect.addEventListener('change', function() {
+        clearFieldError('facility');
+    });
+}
+
+function resetCascade(selectEl, placeholder) {
+    selectEl.innerHTML = `<option value="">${placeholder}</option>`;
+    selectEl.disabled = true;
+    selectEl.classList.remove('error');
+}
+
+function updateCascadeCount(fieldName, count) {
+    const el = document.getElementById(`count_${fieldName}`);
+    if (el) el.textContent = `${count} option${count !== 1 ? 's' : ''} available`;
+}
+
+function clearCascadeCount(fieldName) {
+    const el = document.getElementById(`count_${fieldName}`);
+    if (el) el.textContent = '';
+}
+
+function clearFieldError(fieldName) {
+    const errorDiv = document.getElementById(`error_${fieldName}`);
+    if (errorDiv) errorDiv.classList.remove('show');
+    const field = document.getElementById(fieldName);
+    if (field) field.classList.remove('error');
+}
+
+// ============================================
+// CONDITIONAL FIELDS
+// ============================================
 function setupConditionalFields() {
     const conditionalFields = document.querySelectorAll('.conditional-field');
 
@@ -473,12 +682,9 @@ function setupConditionalFields() {
                     field.classList.add('show');
                 } else {
                     field.classList.remove('show');
-                    const checkboxes = field.querySelectorAll('input[type="checkbox"]');
-                    checkboxes.forEach(cb => cb.checked = false);
-                    const radios = field.querySelectorAll('input[type="radio"]');
-                    radios.forEach(r => r.checked = false);
-                    const textInputs = field.querySelectorAll('input[type="text"], textarea');
-                    textInputs.forEach(input => input.value = '');
+                    field.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+                    field.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false);
+                    field.querySelectorAll('input[type="text"], textarea').forEach(input => input.value = '');
                 }
             });
         });
@@ -491,37 +697,11 @@ function setupConditionalFields() {
     });
 }
 
-function setupCascadingDropdowns() {
-    const regionSelect = document.getElementById('region');
-    const districtSelect = document.getElementById('district');
-
-    if (regionSelect && districtSelect) {
-        regionSelect.addEventListener('change', function() {
-            const selectedRegion = this.value;
-            districtSelect.innerHTML = '<option value="">Select...</option>';
-
-            if (selectedRegion && REGION_DISTRICT_MAP[selectedRegion]) {
-                districtSelect.disabled = false;
-                REGION_DISTRICT_MAP[selectedRegion].forEach(district => {
-                    const option = document.createElement('option');
-                    option.value = district;
-                    option.textContent = district;
-                    districtSelect.appendChild(option);
-                });
-            } else {
-                districtSelect.disabled = true;
-            }
-
-            const districtError = document.getElementById('error_district');
-            if (districtError) districtError.classList.remove('show');
-            districtSelect.classList.remove('error');
-        });
-    }
-}
-
+// ============================================
+// REAL-TIME VALIDATION
+// ============================================
 function setupRealTimeValidation() {
-    const numberInputs = document.querySelectorAll('input[type="number"][required]');
-    numberInputs.forEach(input => {
+    document.querySelectorAll('input[type="number"][required]').forEach(input => {
         input.addEventListener('input', function() {
             this.classList.remove('error');
             const errorDiv = document.getElementById(`error_${this.id}`);
@@ -529,8 +709,7 @@ function setupRealTimeValidation() {
         });
     });
 
-    const allInputs = document.querySelectorAll('input[required], select[required], textarea[required]');
-    allInputs.forEach(input => {
+    document.querySelectorAll('input[required], select[required], textarea[required]').forEach(input => {
         input.addEventListener('blur', function() {
             if (this.type !== 'radio' && this.type !== 'number') validateField(this);
         });
@@ -560,6 +739,9 @@ function validateField(field) {
     }
 }
 
+// ============================================
+// EVENT LISTENERS
+// ============================================
 function setupEventListeners() {
     document.getElementById('viewDataBtn').addEventListener('click', handleViewData);
     document.getElementById('viewAnalysisBtn').addEventListener('click', openAnalysisModal);
@@ -567,12 +749,14 @@ function setupEventListeners() {
     document.getElementById('dataForm').addEventListener('submit', handleFormSubmit);
     window.addEventListener('online', handleOnlineEvent);
     window.addEventListener('offline', handleOfflineEvent);
-
     document.getElementById('draftNameInput').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') confirmSaveDraft();
     });
 }
 
+// ============================================
+// NAVIGATION
+// ============================================
 function nextSection() {
     const currentSectionEl = document.querySelector(`.form-section[data-section="${state.currentSection}"]`);
     let isValid = true;
@@ -592,8 +776,10 @@ function nextSection() {
                 const fieldName = input.getAttribute('data-field-name') || input.name;
                 const errorDiv = document.getElementById(`error_${fieldName}`);
                 if (errorDiv) errorDiv.classList.add('show');
-                input.closest('.radio-group').style.borderLeft = '4px solid #dc3545';
-                setTimeout(() => { if (input.closest('.radio-group')) input.closest('.radio-group').style.borderLeft = ''; }, 3000);
+                if (input.closest('.radio-group')) {
+                    input.closest('.radio-group').style.borderLeft = '4px solid #dc3545';
+                    setTimeout(() => { if (input.closest('.radio-group')) input.closest('.radio-group').style.borderLeft = ''; }, 3000);
+                }
                 if (!firstInvalidField) firstInvalidField = input;
             }
         } else if (!input.value || input.value.trim() === '') {
@@ -619,12 +805,9 @@ function nextSection() {
     if (state.currentSection < state.totalSections) {
         currentSectionEl.classList.remove('active');
         state.currentSection++;
-        const nextSection = document.querySelector(`.form-section[data-section="${state.currentSection}"]`);
-        if (nextSection) {
-            nextSection.classList.add('active');
-            updateProgress();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
+        document.querySelector(`.form-section[data-section="${state.currentSection}"]`).classList.add('active');
+        updateProgress();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 }
 
@@ -643,22 +826,19 @@ function updateProgress() {
     document.getElementById('progressFill').style.width = progress + '%';
 
     let statusBadge = '';
-    if (state.formStatus === 'draft') {
-        statusBadge = '<span class="form-status-badge draft">DRAFT</span>';
-    } else if (state.formStatus === 'finalized') {
-        statusBadge = '<span class="form-status-badge finalized">FINALIZED</span>';
-    }
+    if (state.formStatus === 'draft') statusBadge = '<span class="form-status-badge draft">DRAFT</span>';
+    else if (state.formStatus === 'finalized') statusBadge = '<span class="form-status-badge finalized">FINALIZED</span>';
 
     document.getElementById('progressText').innerHTML = `SECTION ${state.currentSection} OF ${state.totalSections} ${statusBadge}`;
 }
 
+// ============================================
+// DATA / STATUS
+// ============================================
 function handleViewData() {
     if (!checkAdminLogin()) return;
-    if (CONFIG.GOOGLE_SHEET_URL) {
-        window.open(CONFIG.GOOGLE_SHEET_URL, '_blank');
-    } else {
-        showNotification('Please configure Google Sheet URL in the script', 'error');
-    }
+    if (CONFIG.GOOGLE_SHEET_URL) window.open(CONFIG.GOOGLE_SHEET_URL, '_blank');
+    else showNotification('Please configure Google Sheet URL', 'error');
 }
 
 function checkAdminLogin() {
@@ -669,41 +849,21 @@ function checkAdminLogin() {
     return false;
 }
 
-function handleOnlineEvent() {
-    state.isOnline = true;
-    updateOnlineStatus();
-    showNotification('Back online - Syncing data...', 'info');
-    syncPendingSubmissions();
-}
-
-function handleOfflineEvent() {
-    state.isOnline = false;
-    updateOnlineStatus();
-    showNotification('You are offline - Data will be saved locally', 'info');
-}
+function handleOnlineEvent() { state.isOnline = true; updateOnlineStatus(); showNotification('Back online - Syncing data...', 'info'); syncPendingSubmissions(); }
+function handleOfflineEvent() { state.isOnline = false; updateOnlineStatus(); showNotification('You are offline - Data will be saved locally', 'info'); }
 
 function updateOnlineStatus() {
     const indicator = document.getElementById('statusIndicator');
     const text = document.getElementById('statusText');
-    if (state.isOnline) {
-        indicator.className = 'status-indicator online';
-        text.textContent = 'ONLINE';
-    } else {
-        indicator.className = 'status-indicator offline';
-        text.textContent = 'OFFLINE';
-    }
+    if (state.isOnline) { indicator.className = 'status-indicator online'; text.textContent = 'ONLINE'; }
+    else { indicator.className = 'status-indicator offline'; text.textContent = 'OFFLINE'; }
 }
 
-function updatePendingCount() {
-    document.getElementById('pendingCount').textContent = state.pendingSubmissions.length;
-}
-
-function updateDraftCount() {
-    document.getElementById('draftCount').textContent = state.drafts.length;
-}
+function updatePendingCount() { document.getElementById('pendingCount').textContent = state.pendingSubmissions.length; }
+function updateDraftCount() { document.getElementById('draftCount').textContent = state.drafts.length; }
 
 // ============================================
-// GPS FUNCTIONS
+// GPS
 // ============================================
 function captureGPSAutomatically() {
     if (state.gpsAttempted) return;
@@ -713,33 +873,21 @@ function captureGPSAutomatically() {
     const statusText = document.getElementById('gps_status');
     const coordsText = document.getElementById('gps_coords');
 
-    if (!navigator.geolocation) {
-        if (statusIcon) statusIcon.classList.add('error');
-        if (statusText) statusText.textContent = 'GPS not supported by your browser';
-        return;
-    }
+    if (!navigator.geolocation) { if (statusIcon) statusIcon.classList.add('error'); if (statusText) statusText.textContent = 'GPS not supported'; return; }
 
     if (statusIcon) statusIcon.classList.add('loading');
     if (statusText) statusText.textContent = 'Capturing GPS location automatically...';
 
     navigator.geolocation.getCurrentPosition(
         (position) => {
-            const latitude = position.coords.latitude;
-            const longitude = position.coords.longitude;
-            const accuracy = position.coords.accuracy;
+            const { latitude, longitude, accuracy } = position.coords;
             const timestamp = new Date(position.timestamp).toISOString();
-
             state.gpsLocation = { latitude, longitude, accuracy, timestamp };
 
-            const latInput = document.getElementById('gps_latitude');
-            const lonInput = document.getElementById('gps_longitude');
-            const accInput = document.getElementById('gps_accuracy');
-            const timeInput = document.getElementById('gps_timestamp');
-
-            if (latInput) latInput.value = latitude;
-            if (lonInput) lonInput.value = longitude;
-            if (accInput) accInput.value = accuracy;
-            if (timeInput) timeInput.value = timestamp;
+            if (document.getElementById('gps_latitude')) document.getElementById('gps_latitude').value = latitude;
+            if (document.getElementById('gps_longitude')) document.getElementById('gps_longitude').value = longitude;
+            if (document.getElementById('gps_accuracy')) document.getElementById('gps_accuracy').value = accuracy;
+            if (document.getElementById('gps_timestamp')) document.getElementById('gps_timestamp').value = timestamp;
 
             if (statusIcon) { statusIcon.classList.remove('loading', 'error'); statusIcon.classList.add('success'); }
             if (statusText) statusText.textContent = 'GPS location captured successfully!';
@@ -747,13 +895,11 @@ function captureGPSAutomatically() {
         },
         (error) => {
             if (statusIcon) { statusIcon.classList.remove('loading', 'success'); statusIcon.classList.add('error'); }
-            let errorMessage = 'Failed to capture GPS location (optional)';
-            switch(error.code) {
-                case error.PERMISSION_DENIED: errorMessage = 'GPS permission denied (optional)'; break;
-                case error.POSITION_UNAVAILABLE: errorMessage = 'GPS position unavailable (optional)'; break;
-                case error.TIMEOUT: errorMessage = 'GPS request timed out (optional)'; break;
-            }
-            if (statusText) statusText.textContent = errorMessage;
+            let msg = 'Failed to capture GPS (optional)';
+            if (error.code === error.PERMISSION_DENIED) msg = 'GPS permission denied (optional)';
+            else if (error.code === error.POSITION_UNAVAILABLE) msg = 'GPS unavailable (optional)';
+            else if (error.code === error.TIMEOUT) msg = 'GPS timed out (optional)';
+            if (statusText) statusText.textContent = msg;
         },
         { enableHighAccuracy: true, timeout: 120000, maximumAge: 0 }
     );
@@ -765,23 +911,17 @@ function captureGPSAutomatically() {
 function showDraftNameModal() {
     const modal = document.getElementById('draftNameModal');
     const input = document.getElementById('draftNameInput');
-
-    if (state.currentDraftName) {
-        input.value = state.currentDraftName;
-    } else {
+    if (state.currentDraftName) input.value = state.currentDraftName;
+    else {
         const schoolName = document.querySelector('[name="school_name"]')?.value || '';
-        const surveyDate = document.querySelector('[name="survey_date"]')?.value || '';
-        input.value = schoolName || surveyDate || 'Unnamed Draft';
+        input.value = schoolName || 'Unnamed Draft';
     }
-
     modal.classList.add('show');
     input.focus();
     input.select();
 }
 
-function cancelDraftName() {
-    document.getElementById('draftNameModal').classList.remove('show');
-}
+function cancelDraftName() { document.getElementById('draftNameModal').classList.remove('show'); }
 
 function confirmSaveDraft() {
     const draftName = document.getElementById('draftNameInput').value.trim();
@@ -792,47 +932,38 @@ function confirmSaveDraft() {
 
 function saveAsDraft(draftName) {
     const formData = new FormData(document.getElementById('dataForm'));
-
     const data = {
         draftId: state.currentDraftId || generateDraftId(),
-        draftName: draftName,
-        savedAt: new Date().toISOString(),
-        savedBy: 'surveyor',
-        formStatus: 'draft',
-        currentSection: state.currentSection
+        draftName, savedAt: new Date().toISOString(), savedBy: 'surveyor',
+        formStatus: 'draft', currentSection: state.currentSection
     };
 
     for (const [key, value] of formData.entries()) data[key] = value;
 
     const checkboxGroups = {};
-    document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-        if (checkbox.checked) {
-            if (!checkboxGroups[checkbox.name]) checkboxGroups[checkbox.name] = [];
-            checkboxGroups[checkbox.name].push(checkbox.value);
-        }
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        if (cb.checked) { if (!checkboxGroups[cb.name]) checkboxGroups[cb.name] = []; checkboxGroups[cb.name].push(cb.value); }
     });
     for (const [key, values] of Object.entries(checkboxGroups)) data[key] = values.join(', ');
 
-    Object.keys(state.signaturePads).forEach(fieldName => {
-        const pad = state.signaturePads[fieldName];
-        if (pad && !pad.isEmpty()) data[fieldName] = pad.toDataURL();
+    Object.keys(state.signaturePads).forEach(fn => {
+        const pad = state.signaturePads[fn];
+        if (pad && !pad.isEmpty()) data[fn] = pad.toDataURL();
     });
 
     const existingIndex = state.drafts.findIndex(d => d.draftId === data.draftId);
-    if (existingIndex !== -1) { state.drafts[existingIndex] = data; } else { state.drafts.push(data); }
+    if (existingIndex !== -1) state.drafts[existingIndex] = data;
+    else state.drafts.push(data);
 
     localStorage.setItem('formDrafts_itn', JSON.stringify(state.drafts));
     state.currentDraftId = data.draftId;
     state.currentDraftName = draftName;
     document.getElementById('draft_id').value = data.draftId;
-
     updateDraftCount();
     showNotification(`Draft "${draftName}" saved successfully!`, 'success');
 }
 
-function generateDraftId() {
-    return 'draft_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
+function generateDraftId() { return 'draft_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9); }
 
 function openDraftsModal() {
     const modal = document.getElementById('draftsModal');
@@ -841,113 +972,116 @@ function openDraftsModal() {
     if (state.drafts.length === 0) {
         modalBody.innerHTML = '<div class="no-drafts">No saved drafts</div>';
     } else {
-        let html = '';
-        const sortedDrafts = [...state.drafts].sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
-
-        sortedDrafts.forEach((draft) => {
-            const savedDate = new Date(draft.savedAt).toLocaleString();
-            const draftName = draft.draftName || 'Unnamed Draft';
-            const schoolName = draft.school_name || '';
-
-            html += `
-                <div class="draft-item">
-                    <div class="draft-item-header">
-                        <div>
-                            <div class="draft-item-title">${draftName}</div>
-                            ${schoolName ? `<div class="draft-item-subtitle">School: ${schoolName}</div>` : ''}
-                        </div>
-                        <div class="draft-item-date">Saved: ${savedDate}</div>
+        const sorted = [...state.drafts].sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+        modalBody.innerHTML = sorted.map(draft => `
+            <div class="draft-item">
+                <div class="draft-item-header">
+                    <div>
+                        <div class="draft-item-title">${draft.draftName || 'Unnamed Draft'}</div>
+                        ${draft.school_name ? `<div class="draft-item-subtitle">School: ${draft.school_name}</div>` : ''}
+                        ${draft.district ? `<div class="draft-item-subtitle">District: ${draft.district}</div>` : ''}
                     </div>
-                    <div class="draft-item-actions">
-                        <button class="draft-action-btn load" onclick="loadDraft('${draft.draftId}')">📂 LOAD</button>
-                        <button class="draft-action-btn delete" onclick="deleteDraft('${draft.draftId}')">🗑️ DELETE</button>
-                    </div>
+                    <div class="draft-item-date">Saved: ${new Date(draft.savedAt).toLocaleString()}</div>
                 </div>
-            `;
-        });
-        modalBody.innerHTML = html;
+                <div class="draft-item-actions">
+                    <button class="draft-action-btn load" onclick="loadDraft('${draft.draftId}')">📂 LOAD</button>
+                    <button class="draft-action-btn delete" onclick="deleteDraft('${draft.draftId}')">🗑️ DELETE</button>
+                </div>
+            </div>
+        `).join('');
     }
-
     modal.classList.add('show');
 }
 
-function closeDraftsModal() {
-    document.getElementById('draftsModal').classList.remove('show');
-}
+function closeDraftsModal() { document.getElementById('draftsModal').classList.remove('show'); }
 
 function loadDraft(draftId) {
     const draft = state.drafts.find(d => d.draftId === draftId);
     if (!draft) { showNotification('Draft not found', 'error'); return; }
 
     clearForm(false);
-
     state.currentDraftId = draftId;
     state.currentDraftName = draft.draftName;
     state.formStatus = draft.formStatus || 'draft';
     document.getElementById('draft_id').value = draftId;
     document.getElementById('form_status').value = state.formStatus;
 
-    Object.keys(draft).forEach(key => {
-        if (['draftId', 'draftName', 'savedAt', 'savedBy', 'formStatus', 'currentSection'].includes(key)) return;
-
-        const field = document.querySelector(`[name="${key}"]`);
-        if (field) {
-            if (field.type === 'hidden' && key.includes('signature')) {
-                const canvas = document.getElementById(`${key}_canvas`);
-                if (canvas && draft[key]) {
-                    const pad = state.signaturePads[key];
-                    if (pad) {
-                        const img = new Image();
-                        img.onload = () => { const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0); };
-                        img.src = draft[key];
-                        field.value = draft[key];
-                    }
+    // Load cascading fields in correct order
+    const cascadeOrder = ['district', 'chiefdom', 'section', 'facility'];
+    cascadeOrder.forEach(fieldName => {
+        if (draft[fieldName]) {
+            const select = document.getElementById(fieldName);
+            if (select) {
+                // Trigger change on parent to populate options
+                if (fieldName !== 'district') {
+                    const parentMap = { chiefdom: 'district', section: 'chiefdom', facility: 'section' };
+                    const parent = document.getElementById(parentMap[fieldName]);
+                    if (parent) parent.dispatchEvent(new Event('change'));
                 }
-            } else if (field.type === 'radio') {
-                const radio = document.querySelector(`input[name="${key}"][value="${draft[key]}"]`);
-                if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
-            } else if (field.type === 'checkbox') {
-                if (draft[key]) {
-                    const values = draft[key].split(', ');
-                    values.forEach(val => {
-                        const checkbox = document.querySelector(`input[name="${key}"][value="${val}"]`);
-                        if (checkbox) checkbox.checked = true;
-                    });
-                }
-            } else {
-                field.value = draft[key];
-                if (field.tagName === 'SELECT') field.dispatchEvent(new Event('change'));
+                // Small delay to let options populate
+                setTimeout(() => {
+                    select.value = draft[fieldName];
+                    select.dispatchEvent(new Event('change'));
+                }, 50 * cascadeOrder.indexOf(fieldName));
             }
         }
     });
 
-    if (draft.currentSection) {
-        document.querySelectorAll('.form-section').forEach(s => s.classList.remove('active'));
-        state.currentSection = draft.currentSection;
-        const targetSection = document.querySelector(`.form-section[data-section="${draft.currentSection}"]`);
-        if (targetSection) targetSection.classList.add('active');
-    }
+    // Load other fields
+    setTimeout(() => {
+        Object.keys(draft).forEach(key => {
+            if (['draftId', 'draftName', 'savedAt', 'savedBy', 'formStatus', 'currentSection', ...cascadeOrder].includes(key)) return;
 
-    updateProgress();
-    updateSubmitButton();
+            const field = document.querySelector(`[name="${key}"]`);
+            if (field) {
+                if (field.type === 'hidden' && key.includes('signature')) {
+                    const canvas = document.getElementById(`${key}_canvas`);
+                    if (canvas && draft[key]) {
+                        const pad = state.signaturePads[key];
+                        if (pad) {
+                            const img = new Image();
+                            img.onload = () => { canvas.getContext('2d').drawImage(img, 0, 0); };
+                            img.src = draft[key];
+                            field.value = draft[key];
+                        }
+                    }
+                } else if (field.type === 'radio') {
+                    const radio = document.querySelector(`input[name="${key}"][value="${draft[key]}"]`);
+                    if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
+                } else if (field.type === 'checkbox') {
+                    if (draft[key]) {
+                        draft[key].split(', ').forEach(val => {
+                            const cb = document.querySelector(`input[name="${key}"][value="${val}"]`);
+                            if (cb) cb.checked = true;
+                        });
+                    }
+                } else {
+                    field.value = draft[key];
+                }
+            }
+        });
+
+        if (draft.currentSection) {
+            document.querySelectorAll('.form-section').forEach(s => s.classList.remove('active'));
+            state.currentSection = draft.currentSection;
+            const target = document.querySelector(`.form-section[data-section="${draft.currentSection}"]`);
+            if (target) target.classList.add('active');
+        }
+
+        updateProgress();
+        updateSubmitButton();
+    }, 300);
+
     closeDraftsModal();
     showNotification(`Draft "${draft.draftName}" loaded successfully!`, 'success');
 }
 
 function deleteDraft(draftId) {
     const draft = state.drafts.find(d => d.draftId === draftId);
-    const draftName = draft ? draft.draftName : 'this draft';
-    if (!confirm(`Are you sure you want to delete "${draftName}"?`)) return;
-
+    if (!confirm(`Delete "${draft ? draft.draftName : 'this draft'}"?`)) return;
     state.drafts = state.drafts.filter(d => d.draftId !== draftId);
     localStorage.setItem('formDrafts_itn', JSON.stringify(state.drafts));
-
-    if (state.currentDraftId === draftId) {
-        state.currentDraftId = null;
-        state.currentDraftName = null;
-        document.getElementById('draft_id').value = '';
-    }
-
+    if (state.currentDraftId === draftId) { state.currentDraftId = null; state.currentDraftName = null; document.getElementById('draft_id').value = ''; }
     updateDraftCount();
     openDraftsModal();
     showNotification('Draft deleted', 'info');
@@ -961,14 +1095,12 @@ function finalizeForm() {
     let firstInvalidSection = null;
 
     document.querySelectorAll('.form-section').forEach((section, index) => {
-        const inputs = section.querySelectorAll('input[required], select[required], textarea[required]');
-        inputs.forEach(input => {
+        section.querySelectorAll('input[required], select[required], textarea[required]').forEach(input => {
             const parentGroup = input.closest('.conditional-field');
             if (parentGroup && !parentGroup.classList.contains('show')) return;
 
             if (input.type === 'radio') {
-                const radioGroup = section.querySelectorAll(`input[name="${input.name}"]`);
-                const isChecked = Array.from(radioGroup).some(radio => radio.checked);
+                const isChecked = Array.from(section.querySelectorAll(`input[name="${input.name}"]`)).some(r => r.checked);
                 if (!isChecked && firstInvalidSection === null) { isValid = false; firstInvalidSection = index + 1; }
             } else if (!input.value) {
                 isValid = false;
@@ -991,15 +1123,14 @@ function finalizeForm() {
     document.getElementById('form_status').value = 'finalized';
     updateProgress();
     updateSubmitButton();
-
-    if (state.currentDraftName) { saveAsDraft(state.currentDraftName); } else { showDraftNameModal(); }
+    if (state.currentDraftName) saveAsDraft(state.currentDraftName);
+    else showDraftNameModal();
     showNotification('Form finalized! You can now submit.', 'success');
 }
 
 function updateSubmitButton() {
     const submitBtn = document.getElementById('submitBtn');
     const finalizeBtn = document.getElementById('finalizeBtn');
-
     if (state.formStatus === 'finalized') {
         submitBtn.disabled = false;
         finalizeBtn.disabled = true;
@@ -1014,53 +1145,33 @@ function updateSubmitButton() {
 async function handleFormSubmit(e) {
     e.preventDefault();
     e.stopPropagation();
-
-    if (state.formStatus !== 'finalized') {
-        showNotification('Please finalize the form before submitting', 'warning');
-        return;
-    }
+    if (state.formStatus !== 'finalized') { showNotification('Please finalize the form before submitting', 'warning'); return; }
 
     const formData = new FormData(e.target);
-
-    const data = {
-        timestamp: new Date().toISOString(),
-        submittedBy: 'surveyor',
-        form_status: 'submitted'
-    };
-
+    const data = { timestamp: new Date().toISOString(), submittedBy: 'surveyor', form_status: 'submitted' };
     for (const [key, value] of formData.entries()) data[key] = value;
 
     const checkboxGroups = {};
-    document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-        if (checkbox.checked) {
-            if (!checkboxGroups[checkbox.name]) checkboxGroups[checkbox.name] = [];
-            checkboxGroups[checkbox.name].push(checkbox.value);
-        }
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        if (cb.checked) { if (!checkboxGroups[cb.name]) checkboxGroups[cb.name] = []; checkboxGroups[cb.name].push(cb.value); }
     });
     for (const [key, values] of Object.entries(checkboxGroups)) data[key] = values.join(', ');
 
-    if (state.isOnline) { await submitToServer(data); } else { saveOffline(data); }
+    if (state.isOnline) await submitToServer(data);
+    else saveOffline(data);
 }
 
 async function submitToServer(data) {
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
     submitBtn.textContent = 'SUBMITTING...';
-
     try {
-        await fetch(CONFIG.SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-
+        await fetch(CONFIG.SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
         if (state.currentDraftId) {
             state.drafts = state.drafts.filter(d => d.draftId !== state.currentDraftId);
             localStorage.setItem('formDrafts_itn', JSON.stringify(state.drafts));
             updateDraftCount();
         }
-
         showNotification('Data submitted successfully!', 'success');
         clearForm(true);
     } catch (error) {
@@ -1076,13 +1187,11 @@ async function submitToServer(data) {
 function saveOffline(data) {
     state.pendingSubmissions.push(data);
     localStorage.setItem('pendingSubmissions_itn', JSON.stringify(state.pendingSubmissions));
-
     if (state.currentDraftId) {
         state.drafts = state.drafts.filter(d => d.draftId !== state.currentDraftId);
         localStorage.setItem('formDrafts_itn', JSON.stringify(state.drafts));
         updateDraftCount();
     }
-
     updatePendingCount();
     showNotification('Data saved offline - Will sync when online', 'info');
     clearForm(true);
@@ -1091,53 +1200,46 @@ function saveOffline(data) {
 async function syncPendingSubmissions() {
     if (state.pendingSubmissions.length === 0) return;
     showNotification('Syncing pending submissions...', 'info');
-    const successfulSyncs = [];
-
+    const synced = [];
     for (let i = 0; i < state.pendingSubmissions.length; i++) {
         try {
-            await fetch(CONFIG.SCRIPT_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(state.pendingSubmissions[i])
-            });
-            successfulSyncs.push(i);
-        } catch (error) { console.error('Sync error:', error); }
+            await fetch(CONFIG.SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.pendingSubmissions[i]) });
+            synced.push(i);
+        } catch (e) { console.error('Sync error:', e); }
     }
-
-    if (successfulSyncs.length > 0) {
-        state.pendingSubmissions = state.pendingSubmissions.filter((_, index) => !successfulSyncs.includes(index));
+    if (synced.length > 0) {
+        state.pendingSubmissions = state.pendingSubmissions.filter((_, i) => !synced.includes(i));
         localStorage.setItem('pendingSubmissions_itn', JSON.stringify(state.pendingSubmissions));
         updatePendingCount();
-        showNotification(`Successfully synced ${successfulSyncs.length} submission(s)`, 'success');
+        showNotification(`Synced ${synced.length} submission(s)`, 'success');
     }
 }
 
 function clearForm(resetStatus = true) {
     document.getElementById('dataForm').reset();
+    Object.keys(state.signaturePads).forEach(fn => clearSignature(fn));
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
 
-    Object.keys(state.signaturePads).forEach(fieldName => clearSignature(fieldName));
-    document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => checkbox.checked = false);
+    // Reset cascading dropdowns
+    ['chiefdom', 'section', 'facility'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.innerHTML = `<option value="">Select...</option>`; el.disabled = true; }
+    });
+    clearCascadeCount('chiefdom');
+    clearCascadeCount('section');
+    clearCascadeCount('facility');
 
-    const districtSelect = document.getElementById('district');
-    if (districtSelect) { districtSelect.innerHTML = '<option value="">Select...</option>'; districtSelect.disabled = true; }
-
-    document.querySelectorAll('.conditional-field').forEach(field => field.classList.remove('show'));
+    document.querySelectorAll('.conditional-field').forEach(f => f.classList.remove('show'));
 
     state.gpsLocation = null;
     state.gpsAttempted = false;
     const gpsIcon = document.getElementById('gps_icon');
     const gpsStatus = document.getElementById('gps_status');
     const gpsCoords = document.getElementById('gps_coords');
-
     if (gpsIcon) gpsIcon.className = 'gps-icon';
     if (gpsStatus) gpsStatus.textContent = 'Automatically capturing GPS location...';
     if (gpsCoords) gpsCoords.textContent = '';
-
-    ['gps_latitude', 'gps_longitude', 'gps_accuracy', 'gps_timestamp'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-    });
+    ['gps_latitude', 'gps_longitude', 'gps_accuracy', 'gps_timestamp'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
     if (resetStatus) {
         state.formStatus = 'draft';
@@ -1148,362 +1250,152 @@ function clearForm(resetStatus = true) {
     }
 
     state.currentSection = 1;
-    document.querySelectorAll('.form-section').forEach(section => section.classList.remove('active'));
-    const section1 = document.querySelector('.form-section[data-section="1"]');
-    if (section1) section1.classList.add('active');
-
+    document.querySelectorAll('.form-section').forEach(s => s.classList.remove('active'));
+    const s1 = document.querySelector('.form-section[data-section="1"]');
+    if (s1) s1.classList.add('active');
     updateProgress();
     updateSubmitButton();
     window.scrollTo({ top: 0, behavior: 'smooth' });
-
     setTimeout(() => { initializeSignaturePads(); captureGPSAutomatically(); }, 100);
 }
 
 function showNotification(message, type) {
     const notification = document.getElementById('notification');
     const text = document.getElementById('notificationText');
-
     notification.className = `notification ${type} show`;
     text.textContent = message;
-
-    const timeout = type === 'error' && message.length > 100 ? 8000 : 4000;
-    setTimeout(() => { notification.classList.remove('show'); }, timeout);
+    setTimeout(() => { notification.classList.remove('show'); }, type === 'error' && message.length > 100 ? 8000 : 4000);
 }
 
 // ============================================
-// SIGNATURE PAD FUNCTIONS
+// SIGNATURE PAD
 // ============================================
 function initializeSignaturePads() {
-    const canvases = document.querySelectorAll('.signature-canvas');
-
-    canvases.forEach(canvas => {
+    document.querySelectorAll('.signature-canvas').forEach(canvas => {
         const fieldName = canvas.getAttribute('data-field');
         const container = canvas.parentElement;
         canvas.width = container.offsetWidth - 20;
         canvas.height = 150;
-
-        const signaturePad = new SignaturePad(canvas, {
-            backgroundColor: 'rgb(255, 255, 255)',
-            penColor: 'rgb(0, 0, 0)',
-            minWidth: 1,
-            maxWidth: 3
-        });
-
-        state.signaturePads[fieldName] = signaturePad;
-
-        signaturePad.addEventListener('endStroke', () => {
-            const hiddenInput = document.getElementById(fieldName);
-            if (hiddenInput) hiddenInput.value = signaturePad.toDataURL();
-        });
+        const pad = new SignaturePad(canvas, { backgroundColor: 'rgb(255, 255, 255)', penColor: 'rgb(0, 0, 0)', minWidth: 1, maxWidth: 3 });
+        state.signaturePads[fieldName] = pad;
+        pad.addEventListener('endStroke', () => { const hi = document.getElementById(fieldName); if (hi) hi.value = pad.toDataURL(); });
     });
 }
 
 function clearSignature(fieldName) {
-    const signaturePad = state.signaturePads[fieldName];
-    if (signaturePad) {
-        signaturePad.clear();
-        const hiddenInput = document.getElementById(fieldName);
-        if (hiddenInput) hiddenInput.value = '';
-    }
+    const pad = state.signaturePads[fieldName];
+    if (pad) { pad.clear(); const hi = document.getElementById(fieldName); if (hi) hi.value = ''; }
 }
 
-function resizeSignaturePads() {
-    Object.keys(state.signaturePads).forEach(fieldName => {
-        const canvas = document.getElementById(`${fieldName}_canvas`);
+window.addEventListener('resize', () => {
+    Object.keys(state.signaturePads).forEach(fn => {
+        const canvas = document.getElementById(`${fn}_canvas`);
         if (canvas && canvas.parentElement) {
-            const signaturePad = state.signaturePads[fieldName];
-            const data = signaturePad.toData();
-            const container = canvas.parentElement;
-            canvas.width = container.offsetWidth - 20;
+            const pad = state.signaturePads[fn];
+            const data = pad.toData();
+            canvas.width = canvas.parentElement.offsetWidth - 20;
             canvas.height = 150;
-            signaturePad.fromData(data);
+            pad.fromData(data);
         }
     });
-}
-
-window.addEventListener('resize', resizeSignaturePads);
+});
 
 // ============================================
-// ANALYSIS DASHBOARD FUNCTIONS
+// ANALYSIS DASHBOARD
 // ============================================
 async function openAnalysisModal() {
     if (!checkAdminLogin()) return;
-
     const modal = document.getElementById('analysisModal');
     const body = document.getElementById('analysisBody');
-
     modal.classList.add('show');
     body.innerHTML = '<div class="analysis-loading"><p>Loading analysis data...</p></div>';
 
     try {
         const response = await fetch(CONFIG.SCRIPT_URL + '?action=getAnalysis', { method: 'GET' });
         const data = await response.json();
-
-        if (data.status === 'success') {
-            renderAnalysisDashboard(data.data);
-        } else {
-            throw new Error(data.message || 'Failed to load data');
-        }
+        if (data.status === 'success') renderAnalysisDashboard(data.data);
+        else throw new Error(data.message || 'Failed to load data');
     } catch (error) {
-        console.error('Analysis error:', error);
-        body.innerHTML = `
-            <div class="analysis-error">
-                <p>⚠️ Unable to load analysis data</p>
-                <p style="font-size: 12px; margin-top: 10px;">${error.message}</p>
-                <p style="font-size: 12px; margin-top: 10px;">Please ensure the Google Apps Script is properly deployed and the data sheet contains survey responses.</p>
-            </div>
-        `;
+        body.innerHTML = `<div class="analysis-error"><p>⚠️ Unable to load analysis data</p><p style="font-size:12px;margin-top:10px;">${error.message}</p></div>`;
     }
 }
 
-function closeAnalysisModal() {
-    document.getElementById('analysisModal').classList.remove('show');
-}
+function closeAnalysisModal() { document.getElementById('analysisModal').classList.remove('show'); }
 
 function renderAnalysisDashboard(data) {
     const body = document.getElementById('analysisBody');
-
-    let html = `
-        <!-- KEY STATISTICS -->
+    body.innerHTML = `
         <div class="dashboard-grid">
-            <div class="stat-card">
-                <div class="stat-label">TOTAL SCHOOLS SURVEYED</div>
-                <div class="stat-value">${data.totalSubmissions || 0}</div>
-                <div class="stat-sublabel">Schools with ITN distribution</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">TOTAL STUDENTS ENROLLED</div>
-                <div class="stat-value">${(data.totalEnrollment || 0).toLocaleString()}</div>
-                <div class="stat-sublabel">Across all surveyed schools</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">TOTAL ITNs DISTRIBUTED</div>
-                <div class="stat-value">${(data.totalITNsDistributed || 0).toLocaleString()}</div>
-                <div class="stat-sublabel">Nets given to students</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">ITN COVERAGE RATE</div>
-                <div class="stat-value">${data.coverageRate || 0}%</div>
-                <div class="stat-sublabel">ITNs distributed / eligible students</div>
-            </div>
+            <div class="stat-card"><div class="stat-label">TOTAL SCHOOLS</div><div class="stat-value">${data.totalSubmissions || 0}</div><div class="stat-sublabel">Schools surveyed</div></div>
+            <div class="stat-card"><div class="stat-label">TOTAL STUDENTS</div><div class="stat-value">${(data.totalEnrollment || 0).toLocaleString()}</div><div class="stat-sublabel">Across all schools</div></div>
+            <div class="stat-card"><div class="stat-label">ITNs DISTRIBUTED</div><div class="stat-value">${(data.totalITNsDistributed || 0).toLocaleString()}</div><div class="stat-sublabel">Nets given out</div></div>
+            <div class="stat-card"><div class="stat-label">COVERAGE RATE</div><div class="stat-value">${data.coverageRate || 0}%</div><div class="stat-sublabel">ITNs / eligible students</div></div>
         </div>
-
-        <!-- SCHOOL TYPE DISTRIBUTION -->
-        <div class="chart-container">
-            <div class="chart-title">🏫 SCHOOL TYPE DISTRIBUTION</div>
-            <canvas id="schoolTypeChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- REGIONAL DISTRIBUTION -->
-        <div class="chart-container">
-            <div class="chart-title">🗺️ REGIONAL DISTRIBUTION OF SCHOOLS</div>
-            <canvas id="regionalChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- DISTRICT DISTRIBUTION -->
-        <div class="chart-container">
-            <div class="chart-title">📍 DISTRICT DISTRIBUTION</div>
-            <canvas id="districtChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- GENDER DISTRIBUTION OF STUDENTS -->
-        <div class="chart-container">
-            <div class="chart-title">👥 STUDENT ENROLLMENT BY GENDER</div>
-            <canvas id="genderChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- ITN DISTRIBUTION BY GENDER -->
-        <div class="chart-container">
-            <div class="chart-title">🛏️ ITN DISTRIBUTION BY GENDER</div>
-            <canvas id="itnGenderChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- ITN SOURCE -->
-        <div class="chart-container">
-            <div class="chart-title">📦 SOURCE OF ITNs</div>
-            <canvas id="itnSourceChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- ITN BRAND -->
-        <div class="chart-container">
-            <div class="chart-title">🏷️ ITN BRAND/TYPE DISTRIBUTED</div>
-            <canvas id="itnBrandChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- SCHOOL OWNERSHIP -->
-        <div class="chart-container">
-            <div class="chart-title">🏛️ SCHOOL OWNERSHIP TYPE</div>
-            <canvas id="ownershipChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- DISTRIBUTION METHOD -->
-        <div class="chart-container">
-            <div class="chart-title">📋 DISTRIBUTION METHOD USED</div>
-            <canvas id="distributionMethodChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- HEALTH EDUCATION -->
-        <div class="chart-container">
-            <div class="chart-title">📚 HEALTH EDUCATION PROVIDED</div>
-            <canvas id="healthEducationChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- SUFFICIENT ITNs -->
-        <div class="chart-container">
-            <div class="chart-title">✅ SUFFICIENCY OF ITN SUPPLY</div>
-            <canvas id="sufficiencyChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- CHALLENGES -->
-        <div class="chart-container">
-            <div class="chart-title">🚧 DISTRIBUTION CHALLENGES ENCOUNTERED</div>
-            <canvas id="challengesChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- CONDITION OF ITNs -->
-        <div class="chart-container">
-            <div class="chart-title">📊 CONDITION OF ITNs RECEIVED</div>
-            <canvas id="conditionChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- PREVIOUS DISTRIBUTION -->
-        <div class="chart-container">
-            <div class="chart-title">🔄 PREVIOUS SCHOOL ITN DISTRIBUTION</div>
-            <canvas id="previousDistChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- OVERALL RATING -->
-        <div class="chart-container">
-            <div class="chart-title">⭐ OVERALL DISTRIBUTION PROCESS RATING</div>
-            <canvas id="ratingChart" class="chart-canvas"></canvas>
-        </div>
-
-        <!-- COMPREHENSIVE ITN OVERVIEW -->
-        <div class="chart-container">
-            <div class="chart-title">📊 COMPREHENSIVE ITN DISTRIBUTION OVERVIEW</div>
-            <canvas id="comprehensiveChart" class="chart-canvas"></canvas>
-        </div>
+        <div class="chart-container"><div class="chart-title">🏫 SCHOOL TYPE DISTRIBUTION</div><canvas id="schoolTypeChart" class="chart-canvas"></canvas></div>
+        <div class="chart-container"><div class="chart-title">📍 DISTRICT DISTRIBUTION</div><canvas id="districtChart" class="chart-canvas"></canvas></div>
+        <div class="chart-container"><div class="chart-title">👥 STUDENT ENROLLMENT BY GENDER</div><canvas id="genderChart" class="chart-canvas"></canvas></div>
+        <div class="chart-container"><div class="chart-title">🛏️ ITN DISTRIBUTION BY GENDER</div><canvas id="itnGenderChart" class="chart-canvas"></canvas></div>
+        <div class="chart-container"><div class="chart-title">📦 SOURCE OF ITNs</div><canvas id="itnSourceChart" class="chart-canvas"></canvas></div>
+        <div class="chart-container"><div class="chart-title">✅ SUFFICIENCY OF ITN SUPPLY</div><canvas id="sufficiencyChart" class="chart-canvas"></canvas></div>
+        <div class="chart-container"><div class="chart-title">🚧 CHALLENGES ENCOUNTERED</div><canvas id="challengesChart" class="chart-canvas"></canvas></div>
+        <div class="chart-container"><div class="chart-title">⭐ OVERALL RATING</div><canvas id="ratingChart" class="chart-canvas"></canvas></div>
+        <div class="chart-container"><div class="chart-title">📊 COMPREHENSIVE OVERVIEW</div><canvas id="comprehensiveChart" class="chart-canvas"></canvas></div>
     `;
 
-    body.innerHTML = html;
-
     setTimeout(() => {
-        if (data.schoolTypes) renderBarChart('schoolTypeChart', data.schoolTypes, '#004080', 'Number of Schools');
-        if (data.regions) renderDoughnutChart('regionalChart', data.regions);
-        if (data.districts) renderHorizontalBarChart('districtChart', data.districts, '#17a2b8');
-        if (data.totalMaleStudents !== undefined) renderPieChart('genderChart', { 'Male Students': data.totalMaleStudents, 'Female Students': data.totalFemaleStudents });
-        if (data.itnsMale !== undefined) renderPieChart('itnGenderChart', { 'ITNs to Males': data.itnsMale, 'ITNs to Females': data.itnsFemale });
-        if (data.itnSource) renderDoughnutChart('itnSourceChart', data.itnSource);
-        if (data.itnBrand) renderBarChart('itnBrandChart', data.itnBrand, '#28a745', 'Number of Schools');
-        if (data.schoolOwnership) renderDoughnutChart('ownershipChart', data.schoolOwnership);
-        if (data.distributionMethod) renderHorizontalBarChart('distributionMethodChart', data.distributionMethod, '#ffc107');
-        if (data.healthEducation) renderPieChart('healthEducationChart', data.healthEducation);
-        if (data.sufficientITNs) renderPieChart('sufficiencyChart', data.sufficientITNs);
-        if (data.challenges) renderHorizontalBarChart('challengesChart', data.challenges, '#dc3545');
-        if (data.itnCondition) renderBarChart('conditionChart', data.itnCondition, '#17a2b8', 'Number of Schools');
-        if (data.previousDistribution) renderDoughnutChart('previousDistChart', data.previousDistribution);
-        if (data.overallRating) renderPolarChart('ratingChart', data.overallRating);
+        if (data.schoolTypes) renderChart('schoolTypeChart', 'bar', data.schoolTypes, '#004080');
+        if (data.districts) renderChart('districtChart', 'bar', data.districts, '#17a2b8', true);
+        if (data.totalMaleStudents !== undefined) renderPie('genderChart', { Male: data.totalMaleStudents, Female: data.totalFemaleStudents });
+        if (data.itnsMale !== undefined) renderPie('itnGenderChart', { 'Males': data.itnsMale, 'Females': data.itnsFemale });
+        if (data.itnSource) renderDoughnut('itnSourceChart', data.itnSource);
+        if (data.sufficientITNs) renderPie('sufficiencyChart', data.sufficientITNs);
+        if (data.challenges) renderChart('challengesChart', 'bar', data.challenges, '#dc3545', true);
+        if (data.overallRating) renderPolar('ratingChart', data.overallRating);
         if (data.totalEnrollment !== undefined) {
-            renderComprehensiveChart(data);
+            renderChart('comprehensiveChart', 'bar', {
+                'Enrolled': data.totalEnrollment || 0,
+                'Eligible': data.totalEligible || 0,
+                'Present': data.totalPresent || 0,
+                'ITNs Received': data.totalITNsReceived || 0,
+                'ITNs Distributed': data.totalITNsDistributed || 0,
+                'Remaining': data.totalITNsRemaining || 0
+            }, ['#004080', '#0056b3', '#17a2b8', '#28a745', '#ffc107', '#dc3545']);
         }
     }, 100);
 }
 
-// Generic chart rendering functions
-function renderBarChart(canvasId, chartData, color, label) {
-    const ctx = document.getElementById(canvasId);
+function renderChart(id, type, d, color, horizontal) {
+    const ctx = document.getElementById(id);
     if (!ctx) return;
+    const colors = Array.isArray(color) ? color : Object.keys(d).map(() => color);
     new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: Object.keys(chartData),
-            datasets: [{ label: label, data: Object.values(chartData), backgroundColor: color, borderColor: color, borderWidth: 1 }]
-        },
-        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+        type, data: { labels: Object.keys(d), datasets: [{ data: Object.values(d), backgroundColor: colors, borderWidth: 1 }] },
+        options: { responsive: true, maintainAspectRatio: true, indexAxis: horizontal ? 'y' : 'x', plugins: { legend: { display: false } }, scales: { [horizontal ? 'x' : 'y']: { beginAtZero: true, ticks: { stepSize: 1 } } } }
     });
 }
 
-function renderHorizontalBarChart(canvasId, chartData, color) {
-    const ctx = document.getElementById(canvasId);
+function renderPie(id, d) {
+    const ctx = document.getElementById(id);
     if (!ctx) return;
-    new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: Object.keys(chartData),
-            datasets: [{ label: 'Count', data: Object.values(chartData), backgroundColor: color, borderColor: color, borderWidth: 1 }]
-        },
-        options: { responsive: true, maintainAspectRatio: true, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
-    });
+    new Chart(ctx, { type: 'pie', data: { labels: Object.keys(d), datasets: [{ data: Object.values(d), backgroundColor: ['#004080', '#dc3545', '#28a745', '#ffc107', '#17a2b8'], borderWidth: 2, borderColor: '#fff' }] }, options: { responsive: true, plugins: { legend: { position: 'bottom' } } } });
 }
 
-function renderPieChart(canvasId, chartData) {
-    const ctx = document.getElementById(canvasId);
+function renderDoughnut(id, d) {
+    const ctx = document.getElementById(id);
     if (!ctx) return;
-    new Chart(ctx, {
-        type: 'pie',
-        data: {
-            labels: Object.keys(chartData),
-            datasets: [{ data: Object.values(chartData), backgroundColor: ['#004080', '#dc3545', '#28a745', '#ffc107', '#17a2b8', '#6f42c1'], borderWidth: 2, borderColor: '#ffffff' }]
-        },
-        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom' } } }
-    });
+    new Chart(ctx, { type: 'doughnut', data: { labels: Object.keys(d), datasets: [{ data: Object.values(d), backgroundColor: ['#004080', '#0056b3', '#17a2b8', '#28a745', '#ffc107', '#dc3545', '#6f42c1'], borderWidth: 2, borderColor: '#fff' }] }, options: { responsive: true, plugins: { legend: { position: 'right' } } } });
 }
 
-function renderDoughnutChart(canvasId, chartData) {
-    const ctx = document.getElementById(canvasId);
+function renderPolar(id, d) {
+    const ctx = document.getElementById(id);
     if (!ctx) return;
-    new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: Object.keys(chartData),
-            datasets: [{ data: Object.values(chartData), backgroundColor: ['#004080', '#0056b3', '#17a2b8', '#28a745', '#ffc107', '#dc3545', '#6f42c1'], borderWidth: 2, borderColor: '#ffffff' }]
-        },
-        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'right' } } }
-    });
+    new Chart(ctx, { type: 'polarArea', data: { labels: Object.keys(d), datasets: [{ data: Object.values(d), backgroundColor: ['#28a745', '#5cb85c', '#ffc107', '#fd7e14', '#dc3545'], borderWidth: 2, borderColor: '#fff' }] }, options: { responsive: true, plugins: { legend: { position: 'right' } } } });
 }
 
-function renderPolarChart(canvasId, chartData) {
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-    new Chart(ctx, {
-        type: 'polarArea',
-        data: {
-            labels: Object.keys(chartData),
-            datasets: [{ data: Object.values(chartData), backgroundColor: ['#28a745', '#5cb85c', '#ffc107', '#fd7e14', '#dc3545'], borderWidth: 2, borderColor: '#ffffff' }]
-        },
-        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'right' } } }
-    });
-}
-
-function renderComprehensiveChart(data) {
-    const ctx = document.getElementById('comprehensiveChart');
-    if (!ctx) return;
-    new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['Total Enrolled', 'Eligible', 'Present on Day', 'ITNs Received', 'ITNs Distributed', 'ITNs Remaining'],
-            datasets: [{
-                label: 'Count',
-                data: [
-                    data.totalEnrollment || 0,
-                    data.totalEligible || 0,
-                    data.totalPresent || 0,
-                    data.totalITNsReceived || 0,
-                    data.totalITNsDistributed || 0,
-                    data.totalITNsRemaining || 0
-                ],
-                backgroundColor: ['#004080', '#0056b3', '#17a2b8', '#28a745', '#ffc107', '#dc3545'],
-                borderWidth: 1
-            }]
-        },
-        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-    });
-}
-
-// Close modals when clicking outside
+// Close modals on overlay click
 document.getElementById('draftsModal').addEventListener('click', function(e) { if (e.target === this) closeDraftsModal(); });
 document.getElementById('draftNameModal').addEventListener('click', function(e) { if (e.target === this) cancelDraftName(); });
 document.getElementById('analysisModal').addEventListener('click', function(e) { if (e.target === this) closeAnalysisModal(); });
 
-// Initialize on load
+// Initialize
 init();
