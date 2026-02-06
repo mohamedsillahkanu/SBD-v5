@@ -76,7 +76,7 @@
             <div class="photo-frame-section">
                 <div class="photo-frame">
                     <div class="photo-inner">
-                        <img src="infographics.png" alt="ITN Distribution" class="photo-image" id="photoImage" style="display:none;"
+                        <img src="distribution_photo.jpg" alt="ITN Distribution" class="photo-image" id="photoImage" style="display:none;"
                              onerror="this.style.display='none'; document.getElementById('photoPlaceholder').style.display='flex';"
                              onload="this.style.display='block'; document.getElementById('photoPlaceholder').style.display='none';">
                         <div class="photo-placeholder" id="photoPlaceholder" style="display:flex;">
@@ -86,7 +86,7 @@
                                 <polyline points="21 15 16 10 5 21"/>
                             </svg>
                             <p class="photo-placeholder-text">DISTRIBUTION PHOTO</p>
-                            <p class="photo-placeholder-hint">Place <strong>infographics.png</strong> in same folder</p>
+                            <p class="photo-placeholder-hint">Place <strong>distribution_photo.jpg</strong> in same folder</p>
                         </div>
                     </div>
                     <div class="photo-caption">
@@ -311,8 +311,8 @@
 
                             <div class="form-group">
                                 <label class="form-label">HEAD TEACHER NAME <span class="required">*</span></label>
-                                <input type="text" class="form-input" name="head_teacher" id="head_teacher" required>
-                                <div class="field-error" id="error_head_teacher">This field is required</div>
+                                <input type="text" class="form-input name-field" name="head_teacher" id="head_teacher" required>
+                                <div class="field-error" id="error_head_teacher">Name must contain only letters</div>
                             </div>
 
                             <div class="form-group">
@@ -428,7 +428,7 @@
                                 <div class="teacher-row">
                                     <div class="form-group">
                                         <label class="form-label">Teacher Name <span class="required">*</span></label>
-                                        <input type="text" class="form-input" name="c1_teacher_name" id="c1_teacher_name" required>
+                                        <input type="text" class="form-input name-field" name="c1_teacher_name" id="c1_teacher_name" required>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Teacher Phone <span class="required">*</span></label>
@@ -469,7 +469,7 @@
                                 <div class="teacher-row">
                                     <div class="form-group">
                                         <label class="form-label">Teacher Name <span class="required">*</span></label>
-                                        <input type="text" class="form-input" name="c2_teacher_name" id="c2_teacher_name" required>
+                                        <input type="text" class="form-input name-field" name="c2_teacher_name" id="c2_teacher_name" required>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Teacher Phone <span class="required">*</span></label>
@@ -510,7 +510,7 @@
                                 <div class="teacher-row">
                                     <div class="form-group">
                                         <label class="form-label">Teacher Name <span class="required">*</span></label>
-                                        <input type="text" class="form-input" name="c3_teacher_name" id="c3_teacher_name" required>
+                                        <input type="text" class="form-input name-field" name="c3_teacher_name" id="c3_teacher_name" required>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Teacher Phone <span class="required">*</span></label>
@@ -551,7 +551,7 @@
                                 <div class="teacher-row">
                                     <div class="form-group">
                                         <label class="form-label">Teacher Name <span class="required">*</span></label>
-                                        <input type="text" class="form-input" name="c4_teacher_name" id="c4_teacher_name" required>
+                                        <input type="text" class="form-input name-field" name="c4_teacher_name" id="c4_teacher_name" required>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Teacher Phone <span class="required">*</span></label>
@@ -592,7 +592,7 @@
                                 <div class="teacher-row">
                                     <div class="form-group">
                                         <label class="form-label">Teacher Name <span class="required">*</span></label>
-                                        <input type="text" class="form-input" name="c5_teacher_name" id="c5_teacher_name" required>
+                                        <input type="text" class="form-input name-field" name="c5_teacher_name" id="c5_teacher_name" required>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Teacher Phone <span class="required">*</span></label>
@@ -893,8 +893,8 @@
                                 <div class="team-member-grid">
                                     <div class="form-group">
                                         <label class="form-label">Full Name <span class="required">*</span></label>
-                                        <input type="text" class="form-input" name="team1_name" id="team1_name" required>
-                                        <div class="field-error" id="error_team1_name">This field is required</div>
+                                        <input type="text" class="form-input name-field" name="team1_name" id="team1_name" required>
+                                        <div class="field-error" id="error_team1_name">Name must contain only letters</div>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Phone Number <span class="required">*</span></label>
@@ -929,7 +929,7 @@
                                 <div class="team-member-grid">
                                     <div class="form-group">
                                         <label class="form-label">Full Name</label>
-                                        <input type="text" class="form-input" name="team2_name" id="team2_name">
+                                        <input type="text" class="form-input name-field" name="team2_name" id="team2_name">
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Phone Number</label>
@@ -963,7 +963,7 @@
                                 <div class="team-member-grid">
                                     <div class="form-group">
                                         <label class="form-label">Full Name</label>
-                                        <input type="text" class="form-input" name="team3_name" id="team3_name">
+                                        <input type="text" class="form-input name-field" name="team3_name" id="team3_name">
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Phone Number</label>
