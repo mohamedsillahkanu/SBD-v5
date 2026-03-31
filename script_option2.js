@@ -2,8 +2,8 @@
 // CONFIGURATION
 // ============================================
 const CONFIG = {
-    SCRIPT_URL: 'https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec',
-    SHEET_URL:  'https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit',
+    SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbymRy-M5v0fVLWUjw4IXYhd1oIR2ZvnP_Dzr_iGR-Th0cMIpmE2ntGeujWYH7-C6NHIzA/exec',
+    SHEET_URL:  'https://docs.google.com/spreadsheets/d/1cXlYiTMzcRP1BCj9mt1JXoK_pjgWbRtDEEQUPMg2HPs/edit?gid=0#gid=0',
     CSV_FILE:   'cascading_data1.csv',
     ADMIN_USER: 'admin',
     ADMIN_PASS: 'admin123'
