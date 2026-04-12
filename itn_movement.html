@@ -1,4 +1,4 @@
-<!DOCTYPE html>   
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -9,6 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root{
   --navy:#004080;--navy-d:#002952;--navy-l:#e8f1fb;
@@ -484,9 +486,9 @@ body{overflow-x:hidden;}
             <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             DOWNLOAD QR
           </button>
-          <button class="btn btn-outline" onclick="printReceipt()">
-            <svg viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-            PRINT RECEIPT
+          <button class="btn btn-outline" onclick="downloadReceiptPDF()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="12" y2="18"/><line x1="15" y1="15" x2="12" y2="18"/></svg>
+            DOWNLOAD PDF
           </button>
         </div>
         <button class="btn btn-navy btn-full" onclick="newDispatch()">
@@ -1101,77 +1103,40 @@ function downloadReceipt() {
   link.click();
 }
 
-function printReceipt() {
-  const canvas = document.querySelector('#receiptQR canvas');
-  const qrSrc = canvas ? canvas.toDataURL('image/png') : '';
+function downloadReceiptPDF() {
   const r = lastRecord || {};
-  const win = window.open('','_blank');
-  win.document.write(`
-    <!DOCTYPE html><html><head>
-    <title>ICF-SL Dispatch Receipt — ${r.dispatch_id||''}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>
-      *{box-sizing:border-box;margin:0;padding:0;}
-      body{font-family:'Oswald',sans-serif;background:#fff;color:#0d1b2a;padding:20px;}
-      .receipt{max-width:420px;margin:0 auto;border:3px solid #c8991a;border-radius:12px;overflow:hidden;}
-      .hdr{background:#004080;padding:16px;text-align:center;color:#fff;}
-      .hdr h2{font-size:18px;font-weight:700;letter-spacing:1px;}
-      .hdr p{font-size:10px;opacity:.7;margin-top:3px;letter-spacing:.5px;text-transform:uppercase;}
-      .qr-sec{padding:16px;text-align:center;border-bottom:2px dashed #dde3ee;}
-      .qr-sec img{border:2px solid #004080;border-radius:8px;width:180px;}
-      .badge{background:#fff8e1;border:1px solid #c8991a;color:#8a6500;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;display:inline-block;margin-bottom:10px;letter-spacing:.5px;}
-      .body{padding:14px 16px;}
-      .sec-title{font-size:10px;font-weight:700;letter-spacing:1px;color:#4a5568;text-transform:uppercase;border-bottom:1px solid #dde3ee;padding-bottom:5px;margin:12px 0 8px;}
-      .row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee;font-size:12px;}
-      .row:last-child{border-bottom:none;}
-      .k{color:#4a5568;}.v{font-weight:600;text-align:right;}
-      .total-bar{background:#004080;color:#fff;border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;margin:10px 0;}
-      .total-bar span{font-size:11px;opacity:.8;}.total-bar strong{font-size:22px;font-weight:700;}
-      .verify{text-align:center;background:#e8f1fb;border-radius:8px;padding:10px;margin:10px 0;}
-      .verify .code{font-size:24px;font-weight:700;color:#004080;letter-spacing:5px;}
-      .verify .sub{font-size:10px;color:#4a5568;margin-top:3px;}
-      .footer{background:#e8f1fb;padding:10px;text-align:center;font-size:10px;color:#4a5568;border-top:1px solid #dde3ee;}
-      @media print{body{padding:0;}.receipt{max-width:100%;border:2px solid #c8991a;}}
-    </style></head><body>
-    <div class="receipt">
-      <div class="hdr"><h2>ICF‑SIERRA LEONE</h2><p>ITN Distribution — Movement Receipt</p></div>
-      <div class="qr-sec">
-        <div class="badge">${r.dispatch_id||''}</div><br>
-        ${qrSrc ? `<img src="${qrSrc}" alt="QR Code">` : ''}
-        <p style="font-size:10px;color:#4a5568;margin-top:8px;">Scan at PHU to verify delivery</p>
-      </div>
-      <div class="body">
-        <div class="sec-title">DISPATCH INFORMATION</div>
-        <div class="row"><span class="k">Dispatch ID</span><span class="v">${r.dispatch_id||''}</span></div>
-        <div class="row"><span class="k">Date &amp; Time</span><span class="v">${new Date(r.timestamp||'').toLocaleString('en-SL')}</span></div>
-        <div class="row"><span class="k">DMS Staff</span><span class="v">${r.staff_name||''}</span></div>
-        <div class="row"><span class="k">Staff District</span><span class="v">${r.staff_district||''}</span></div>
-        <div class="sec-title">DESTINATION</div>
-        <div class="row"><span class="k">District</span><span class="v">${r.destination_district||''}</span></div>
-        <div class="row"><span class="k">Chiefdom</span><span class="v">${r.chiefdom||''}</span></div>
-        <div class="row"><span class="k">Health Facility</span><span class="v">${r.phu||''}</span></div>
-        <div class="sec-title">ITN DETAILS</div>
-        <div class="row"><span class="k">ITN Type</span><span class="v">Dual-AI</span></div>
-        <div class="total-bar"><span>TOTAL ITNs DISPATCHED</span><strong>${r.total_qty||0}</strong></div>
-        <div class="sec-title">TRANSPORT</div>
-        <div class="row"><span class="k">Driver</span><span class="v">${r.driver_name||''}</span></div>
-        <div class="row"><span class="k">Username</span><span class="v">${r.driver_username||''}</span></div>
-        <div class="row"><span class="k">Vehicle Plate</span><span class="v">${r.vehicle||''}</span></div>
-        <div class="verify">
-          <div class="code">${(r.dispatch_id||'').slice(-6).toUpperCase()}</div>
-          <div class="sub">Verification Code — Last 6 digits of Dispatch ID</div>
-        </div>
-      </div>
-      <div class="footer">
-        <strong>ICF‑Sierra Leone</strong> · This receipt serves as proof of ITN dispatch<br>
-        Generated: ${new Date().toLocaleString('en-SL')}
-      </div>
-    </div>
-    <script>window.onload=function(){window.print();}<\/script>
-    </body></html>
-  `);
-  win.document.close();
+  const receiptEl = document.getElementById('receiptPrintArea');
+  if (!receiptEl) { toast('Receipt not found.', 'error'); return; }
+
+  toast('Generating PDF…', '');
+
+  // Use html2canvas to capture the receipt card, then embed in jsPDF
+  html2canvas(receiptEl, {
+    scale: 2,
+    useCORS: true,
+    allowTaint: true,
+    backgroundColor: '#ffffff'
+  }).then(function(canvas) {
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
+
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgW  = pageW - 10;
+    const imgH  = (canvas.height * imgW) / canvas.width;
+    const y     = imgH < pageH ? (pageH - imgH) / 2 : 5;
+
+    pdf.addImage(imgData, 'JPEG', 5, y, imgW, imgH);
+    const filename = (r.dispatch_id || 'dispatch') + '_receipt.pdf';
+    pdf.save(filename);
+    toast('PDF downloaded!', 'success');
+  }).catch(function(e) {
+    console.error(e);
+    toast('PDF generation failed.', 'error');
+  });
 }
+
 
 /* ── RETRY SYNC ─────────────────────────────────────────────── */
 async function retrySyncAll() {
