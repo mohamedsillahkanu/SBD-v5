@@ -752,11 +752,11 @@
     function renderTargetsTab() {
         const body = document.getElementById('targetsBody');
         if (!body) return;
-    
+
         const tree = buildTargetsTree();
         const submitted = getSubmittedSet();
         const districts = Object.keys(tree).sort();
-    
+
         if (!districts.length) {
             body.innerHTML = `<div class="an-no-data">
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
@@ -764,16 +764,23 @@
             </div>`;
             return;
         }
-    
+
         const statusFilter = document.getElementById('targetStatusFilter')?.value || 'all';
         
+        // FIXED: Look for 'School Status' column, not 'status'
+        function getSchoolStatus(school) {
+            // Try multiple possible column names
+            const status = school['School Status'] || school.status || school['Status'] || school['school_status'] || 'Old';
+            return String(status).trim().toLowerCase();
+        }
+        
         function filterByStatus(school) {
-            const schoolStatus = (school.status || 'Old').toLowerCase();
+            const schoolStatus = getSchoolStatus(school);
             if (statusFilter === 'old') return schoolStatus === 'old' || schoolStatus === 'yes';
             if (statusFilter === 'new') return schoolStatus === 'new' || schoolStatus === 'no';
-            return true;
+            return true; // 'all'
         }
-    
+
         const sheetBanner = _sheetRows.length === 0
             ? `<div class="alert" style="background:#fff8e1;border:1px solid #ffe082;border-radius:9px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:8px;font-size:12px;color:#8a6500;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="#c8991a" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -783,7 +790,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" width="16" height="16"><path d="M9 11l3 3L22 4"/></svg>
                 Showing <strong>${_sheetRows.length} submissions</strong> from ICF-SL Server.
               </div>`;
-    
+
         let natSchools = 0, natDone = 0;
         let oldSchools = 0, oldDone = 0;
         let newSchools = 0, newDone = 0;
@@ -796,8 +803,15 @@
                 natSchools += filteredSchools.length;
                 natDone += filteredSchools.filter(s => submitted.has(s.key)).length;
                 
-                const oldOnes = allSchools.filter(s => (s.status || 'Old').toLowerCase() === 'old' || (s.status || 'Old').toLowerCase() === 'yes');
-                const newOnes = allSchools.filter(s => (s.status || 'New').toLowerCase() === 'new' || (s.status || 'New').toLowerCase() === 'no');
+                // Count Old vs New based on 'School Status' column
+                const oldOnes = allSchools.filter(s => {
+                    const status = getSchoolStatus(s);
+                    return status === 'old' || status === 'yes';
+                });
+                const newOnes = allSchools.filter(s => {
+                    const status = getSchoolStatus(s);
+                    return status === 'new' || status === 'no';
+                });
                 
                 oldSchools += oldOnes.length;
                 oldDone += oldOnes.filter(s => submitted.has(s.key)).length;
@@ -809,7 +823,7 @@
         const natPct = natSchools > 0 ? Math.round((natDone / natSchools) * 100) : 0;
         const oldPct = oldSchools > 0 ? Math.round((oldDone / oldSchools) * 100) : 0;
         const newPct = newSchools > 0 ? Math.round((newDone / newSchools) * 100) : 0;
-    
+
         let html = sheetBanner + `
         <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span style="font-family:Oswald,sans-serif;font-size:11px;color:#607080;">Filter by status:</span>
@@ -819,7 +833,7 @@
                 <option value="new" ${statusFilter === 'new' ? 'selected' : ''}>New Schools Only</option>
             </select>
         </div>
-    
+
         <style>
         .tg-kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px;}
         .tg-kpi{background:#fff;border-radius:10px;padding:14px 10px;text-align:center;box-shadow:0 2px 8px rgba(0,64,128,.07);border-top:4px solid #004080;}
@@ -859,7 +873,7 @@
         .tg-chip.new-school{background:#e3f2fd;color:#1565c0;border:1px solid #90caf9;}
         .tg-chip.new-school::before{content:'🆕 ';}
         </style>`;
-    
+
         if (statusFilter === 'all') {
             html += `
             <div class="tg-kpi-row">
@@ -897,7 +911,7 @@
                 <div class="tg-nat-bar"><div class="tg-nat-fill" style="width:${natPct}%;background:${natPct>=80?'#28a745':natPct>=50?'#f0a500':'#dc3545'};"></div></div>
             </div>`;
         }
-    
+
         districts.forEach((district, di) => {
             const chiefdoms = Object.keys(tree[district].chiefdoms).sort();
             let dTotal = 0, dDone = 0;
@@ -909,7 +923,7 @@
             const dPct = dTotal > 0 ? Math.round((dDone / dTotal) * 100) : 0;
             const dCol = dPct >= 80 ? '#28a745' : dPct >= 50 ? '#f0a500' : '#dc3545';
             const panelId = 'tg-panel-' + di;
-    
+
             html += `
             <div class="tg-dist">
                 <div class="tg-dist-hdr" onclick="document.getElementById('${panelId}').style.display=document.getElementById('${panelId}').style.display==='none'?'block':'none'">
@@ -938,23 +952,24 @@
                                 <th style="text-align:center;">Remaining</th>
                                 <th style="min-width:160px;">Progress</th>
                                 <th>Schools</th>
-                             </tr></thead>
+                              </tr>
+                            </thead>
                             <tbody>`;
-    
+
             chiefdoms.forEach((chiefdom, ci) => {
                 const schs = tree[district].chiefdoms[chiefdom].schools.filter(filterByStatus);
                 const cTotal = schs.length;
                 const cDone = schs.filter(s => submitted.has(s.key)).length;
                 const cPct = cTotal > 0 ? Math.round((cDone / cTotal) * 100) : 0;
                 const cCol = cPct >= 80 ? '#28a745' : cPct >= 50 ? '#f0a500' : '#dc3545';
-    
+
                 const phuMap = {};
                 schs.forEach(s => {
                     if (!phuMap[s.phu]) phuMap[s.phu] = [];
                     phuMap[s.phu].push(s);
                 });
                 const phuKeys = Object.keys(phuMap).sort();
-    
+
                 html += `
                     <tr style="background:#f0f4f8;">
                         <td style="color:#8090a0;font-size:11px;font-weight:700;">${ci+1}</td>
@@ -973,7 +988,7 @@
                         </td>
                         <td style="color:#607080;font-size:10px;">${phuKeys.length} PHU${phuKeys.length!==1?'s':''} · ${cTotal} schools</td>
                     </tr>`;
-    
+
                 phuKeys.forEach(phu => {
                     const pSchs = phuMap[phu];
                     const pTotal = pSchs.length;
@@ -982,11 +997,12 @@
                     const pCol = pPct >= 80 ? '#28a745' : pPct >= 50 ? '#f0a500' : '#dc3545';
                     const pChips = pSchs.map(s => {
                         const done = submitted.has(s.key);
-                        const statusLabel = (s.status || 'Old') === 'New' || (s.status || 'Old') === 'no' ? ' 🆕' : '';
+                        const schoolStatus = getSchoolStatus(s);
+                        const statusLabel = schoolStatus === 'new' ? ' 🆕' : '';
                         const lbl = s.name.length > 20 ? s.name.substring(0, 18) + '…' : s.name;
                         return `<span class="tg-chip ${done ? 'done' : 'pend'}" title="${s.name} · ${s.community}${statusLabel}">${done ? '✓ ' : ''}${lbl}${statusLabel}</span>`;
                     }).join('');
-    
+
                     html += `
                     <tr style="background:#f8fbff;">
                         <td style="color:#bbb;font-size:10px;padding-left:20px;">└</td>
@@ -1007,7 +1023,7 @@
                     </tr>`;
                 });
             });
-    
+
             html += `
                             </tbody>
                         </table>
@@ -1015,9 +1031,9 @@
                 </div>
             </div>`;
         });
-    
+
         body.innerHTML = html;
-    
+
         const firstPanel = document.getElementById('tg-panel-0');
         if (firstPanel) firstPanel.style.display = 'block';
         districts.forEach((_, i) => {
