@@ -1441,73 +1441,162 @@
         { id:'forcesync',      file:'force_sync.html',           label:'Force Sync',             icon:'M21 2v6h-6M3 12a9 9 0 0115.36-6.36L21 8M3 22v-6h6M21 12a9 9 0 01-15.36 6.36L3 16',                                  color:'#28a745', dark:'#1e7a32' }
     ];
 
-    // Sub-tab content per module (video, ppt, tool)
-    // Update these paths to point to your actual files
+    // ════════════════════════════════════════════════════
+    // CHANGE #1: SUB-TAB RESOURCES: tool (HTML), assessment (HTML), video (MP4/YouTube)
+    // ════════════════════════════════════════════════════
     const MODULE_RESOURCES = {
-        dataentry:      { video: 'https://youtu.be/Jt3k97hQ8ck', ppt: '' },
-        monitoring:     { video: '', ppt: '' },
-        reconciliation: { video: '', ppt: '' },
-        device:         { video: '', ppt: '' },
-        movement:       { video: '', ppt: '' },
-        itnreceived:    { video: '', ppt: '' },
-        attendance:     { video: '', ppt: '' },
-        report:         { video: '', ppt: '' },
+        monitoring: {
+            tool: 'monitoring.html',
+            assessment: 'monitoring_assessment.html',
+            video: 'https://youtu.be/xxxxx'  // YouTube or 'videos/monitoring.mp4'
+        },
+        reconciliation: {
+            tool: 'itn_reconciliation.html',
+            assessment: 'reconciliation_assessment.html',
+            video: ''
+        },
+        schoolqr: {
+            tool: 'school_qr_generator.html',
+            assessment: 'schoolqr_assessment.html',
+            video: ''
+        },
+        idcards: {
+            tool: 'id_cards.html',
+            assessment: 'idcards_assessment.html',
+            video: ''
+        },
+        devicetag: {
+            tool: 'device_tag.html',
+            assessment: 'devicetag_assessment.html',
+            video: ''
+        },
+        device: {
+            tool: 'device_tracking.html',
+            assessment: 'device_assessment.html',
+            video: ''
+        },
+        movement: {
+            tool: 'itn_movement.html',
+            assessment: 'movement_assessment.html',
+            video: ''
+        },
+        itnreceived: {
+            tool: 'itn_received.html',
+            assessment: 'itnreceived_assessment.html',
+            video: ''
+        },
+        attendance: {
+            tool: 'attendance_payment.html',
+            assessment: 'attendance_assessment.html',
+            video: ''
+        },
+        report: {
+            tool: 'distribution_report.html',
+            assessment: 'report_assessment.html',
+            video: ''
+        }
     };
 
     function openModuleSubTab(id, tab) {
         const el = document.getElementById('mod-' + id);
         if (!el) return;
-        // Update active tab buttons
-        el.querySelectorAll('.mod-subtab').forEach(b => b.classList.remove('active'));
-        const btn = el.querySelector('.mod-subtab[data-tab="'+tab+'"]');
-        if (btn) btn.classList.add('active');
-
+        
+        // ── Update active button styles ──
+        el.querySelectorAll('.mod-subtab').forEach(b => {
+            const isActive = b.getAttribute('data-tab') === tab;
+            b.style.background = isActive ? '#004080' : '#f0f4f8';
+            b.style.color = isActive ? '#fff' : '#607080';
+            b.style.borderColor = isActive ? '#004080' : '#d0dce8';
+            b.classList.toggle('active', isActive);
+        });
+        
         const body = document.getElementById('mod-body-' + id);
         if (!body) return;
+        
         const mod = MODULES.find(m => m.id === id);
         const res = MODULE_RESOURCES[id] || {};
-
+        
+        // ────────────────────────────────────────
+        // TOOL TAB — main module interface (HTML)
+        // ────────────────────────────────────────
         if (tab === 'tool') {
+            const toolFile = res.tool || mod?.file || '';
             body.innerHTML = `
-              <div class="module-loading" id="mod-loading-${id}" style="display:flex;">
-                <div class="module-spinner"></div>
-                <div style="font-family:'Oswald',sans-serif;font-size:13px;color:#607080;">Loading ${mod?.label}…</div>
-              </div>
-              <iframe class="module-iframe" id="mod-frame-${id}" src=""
-                style="display:none;width:100%;height:100%;border:none;"
-                onload="document.getElementById('mod-loading-${id}').style.display='none';this.style.display='block';"
-                onerror="document.getElementById('mod-loading-${id}').innerHTML='<div style=\'text-align:center;padding:30px;\'>⚠ Could not load module.</div>';">
-              </iframe>`;
-            const frame = document.getElementById('mod-frame-' + id);
-            if (frame && !frame.src.includes(mod.file)) {
-                setTimeout(() => { frame.src = mod.file; }, 50);
+                <div class="module-loading" id="mod-loading-${id}" style="display:flex;">
+                    <div class="module-spinner"></div>
+                    <div style="font-family:'Oswald',sans-serif;font-size:13px;color:#607080;">Loading ${mod?.label} Tool…</div>
+                </div>
+                <iframe class="module-iframe" id="mod-frame-${id}" src="${toolFile}"
+                    style="display:none;width:100%;height:100%;border:none;"
+                    onload="document.getElementById('mod-loading-${id}').style.display='none'; this.style.display='block';"
+                    onerror="document.getElementById('mod-loading-${id}').innerHTML='<div style=\'text-align:center; padding:30px; color:#dc3545; font-size:13px;\'><strong>⚠ Tool not found:</strong><br>${toolFile}</div>';">
+                </iframe>`;
+        }
+        
+        // ────────────────────────────────────────
+        // ASSESSMENT TAB — interactive HTML form
+        // ────────────────────────────────────────
+        else if (tab === 'assessment') {
+            const assessFile = res.assessment || '';
+            if (!assessFile) {
+                body.innerHTML = `
+                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:30px;text-align:center;">
+                        <div style="width:64px;height:64px;background:#f0f4f8;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;">📋</div>
+                        <div style="font-family:'Oswald',sans-serif;font-size:14px;font-weight:700;color:#004080;">No Assessment Available</div>
+                        <div style="font-size:12px;color:#888;">Upload assessment file to MODULE_RESOURCES</div>
+                    </div>`;
+            } else {
+                body.innerHTML = `
+                    <div class="module-loading" id="mod-loading-${id}" style="display:flex;">
+                        <div class="module-spinner"></div>
+                        <div style="font-family:'Oswald',sans-serif;font-size:13px;color:#607080;">Loading Assessment…</div>
+                    </div>
+                    <iframe class="module-iframe" id="mod-frame-${id}" src="${assessFile}"
+                        style="display:none;width:100%;height:100%;border:none;"
+                        onload="document.getElementById('mod-loading-${id}').style.display='none'; this.style.display='block';"
+                        onerror="document.getElementById('mod-loading-${id}').innerHTML='<div style=\'text-align:center; padding:30px; color:#dc3545; font-size:13px;\'><strong>⚠ Assessment not found:</strong><br>${assessFile}</div>';">
+                    </iframe>`;
             }
-        } else if (tab === 'video') {
-            const src = res.video || '';
-            body.innerHTML = src
-                ? `<div style="padding:16px;height:100%;display:flex;flex-direction:column;gap:12px;">
-                    <div style="font-family:'Oswald',sans-serif;font-size:12px;font-weight:700;color:#004080;letter-spacing:.5px;text-transform:uppercase;">📹 Training Video</div>
-                    <video controls style="width:100%;border-radius:10px;border:2px solid #dde3ee;flex:1;background:#000;">
-                      <source src="${src}" type="video/mp4">Your browser does not support video.
-                    </video>
-                   </div>`
-                : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:30px;text-align:center;">
-                    <div style="width:64px;height:64px;background:#f0f4f8;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;">🎬</div>
-                    <div style="font-family:'Oswald',sans-serif;font-size:14px;font-weight:700;color:#004080;">No Video Available</div>
-                    <div style="font-size:12px;color:#888;">Upload a training video for this module.</div>
-                   </div>`;
-        } else if (tab === 'ppt') {
-            const src = res.ppt || '';
-            body.innerHTML = src
-                ? `<div style="padding:16px;height:100%;display:flex;flex-direction:column;gap:12px;">
-                    <div style="font-family:'Oswald',sans-serif;font-size:12px;font-weight:700;color:#004080;letter-spacing:.5px;text-transform:uppercase;">📊 Presentation / PDF</div>
-                    <iframe src="${src}" style="width:100%;flex:1;border-radius:10px;border:2px solid #dde3ee;" allowfullscreen></iframe>
-                   </div>`
-                : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:30px;text-align:center;">
-                    <div style="width:64px;height:64px;background:#f0f4f8;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;">📊</div>
-                    <div style="font-family:'Oswald',sans-serif;font-size:14px;font-weight:700;color:#004080;">No Presentation Available</div>
-                    <div style="font-size:12px;color:#888;">Upload a PDF or PowerPoint for this module.</div>
-                   </div>`;
+        }
+        
+        // ────────────────────────────────────────
+        // VIDEO TAB — YouTube or MP4 video
+        // ────────────────────────────────────────
+        else if (tab === 'video') {
+            const videoSrc = res.video || '';
+            if (!videoSrc) {
+                body.innerHTML = `
+                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:30px;text-align:center;">
+                        <div style="width:64px;height:64px;background:#f0f4f8;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;">🎬</div>
+                        <div style="font-family:'Oswald',sans-serif;font-size:14px;font-weight:700;color:#004080;">No Video Available</div>
+                        <div style="font-size:12px;color:#888;">Add YouTube or MP4 link to MODULE_RESOURCES[${id}].video</div>
+                    </div>`;
+            } 
+            // YouTube link detector
+            else if (videoSrc.includes('youtu')) {
+                const videoId = videoSrc.includes('youtu.be/') 
+                    ? videoSrc.split('youtu.be/')[1]?.split('?')[0] 
+                    : videoSrc.split('v=')[1]?.split('&')[0];
+                body.innerHTML = `
+                    <div style="padding:16px;height:100%;display:flex;flex-direction:column;gap:12px;background:#f0f4f8;">
+                        <div style="font-family:'Oswald',sans-serif;font-size:12px;font-weight:700;color:#004080;letter-spacing:.5px;text-transform:uppercase;">🎬 Training Video</div>
+                        <iframe style="flex:1;width:100%;border-radius:10px;border:2px solid #dde3ee;" 
+                            src="https://www.youtube.com/embed/${videoId}?rel=0&showinfo=0" 
+                            frameborder="0" allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
+                        </iframe>
+                    </div>`;
+            }
+            // MP4 file
+            else {
+                body.innerHTML = `
+                    <div style="padding:16px;height:100%;display:flex;flex-direction:column;gap:12px;background:#f0f4f8;">
+                        <div style="font-family:'Oswald',sans-serif;font-size:12px;font-weight:700;color:#004080;letter-spacing:.5px;text-transform:uppercase;">🎬 Training Video</div>
+                        <video controls style="width:100%;border-radius:10px;border:2px solid #dde3ee;flex:1;background:#000;">
+                            <source src="${videoSrc}" type="video/mp4">
+                            Your browser does not support video playback.
+                        </video>
+                    </div>`;
+            }
         }
     }
 
@@ -1530,6 +1619,27 @@
                   </button>
                 </div>
               </div>
+              
+              <!-- ╔═══ CHANGE #3: SUB-TAB BAR ═══╗ -->
+              <div style="background:#f0f4f8;border-bottom:2px solid #d0dce8;display:flex;gap:6px;padding:10px 14px;flex-shrink:0;">
+                <button class="mod-subtab active" data-tab="tool" 
+                    onclick="openModuleSubTab('${id}','tool')"
+                    style="flex:1;padding:10px;background:#004080;color:#fff;border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;cursor:pointer;transition:all .15s;">
+                    🛠 TOOL
+                </button>
+                <button class="mod-subtab" data-tab="assessment" 
+                    onclick="openModuleSubTab('${id}','assessment')"
+                    style="flex:1;padding:10px;background:#f0f4f8;color:#607080;border:1px solid #d0dce8;border-radius:8px;font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;cursor:pointer;transition:all .15s;">
+                    📋 ASSESSMENT
+                </button>
+                <button class="mod-subtab" data-tab="video" 
+                    onclick="openModuleSubTab('${id}','video')"
+                    style="flex:1;padding:10px;background:#f0f4f8;color:#607080;border:1px solid #d0dce8;border-radius:8px;font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;cursor:pointer;transition:all .15s;">
+                    🎬 VIDEO
+                </button>
+              </div>
+              <!-- ╚════════════════════════════════╝ -->
+              
               <div id="mod-body-${id}" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
                 <div class="module-loading" id="mod-loading-${id}">
                   <div class="module-spinner"></div>
@@ -1583,12 +1693,6 @@
             if (formEl) formEl.style.display = 'block';
         } else if (tab === 'video') {
             if (formEl) formEl.style.display = 'none';
-            
-            if (panel) panel.style.display = 'flex';
-            // Load video if configured
-            const src = MODULE_RESOURCES.dataentry?.video || '';
-            if (src) {
-                                                                            }
         } else if (tab === 'ppt') {
             if (formEl) formEl.style.display = 'none';
             const panel = document.getElementById('de-panel-ppt');
